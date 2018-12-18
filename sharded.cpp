@@ -31,7 +31,7 @@ int k = 1000;
 int nb = 1000000; 
 int ncentroids = 256; 
 int m = 8;
-bool gpu = false;
+bool gpu = true;
 int nprobe = 4;
 
 void generator(MPI_Comm search_comm);
@@ -156,8 +156,49 @@ int main() {
     MPI_Finalize();
 }
 
+double random_interval(double lambda) {
+	double r = static_cast<double>(rand()) / static_cast<double>(RAND_MAX);
+	return - log(r) / lambda;
+}
+
+void poisson_generator(MPI_Comm search_comm, double lambda) {
+	double min_interval = 0;
+
+	char query_path[500];
+	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
+
+	int world_size;
+	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+	//loading queries
+	size_t fz;
+	unsigned char* queries = bvecs_read(query_path, &fz);
+	float* xq = to_float_array(queries, nq, d);
+	munmap(queries, fz);
+
+	double last = elapsed();
+
+	int qn = 0;
+
+	while (qn != nq) {
+		double now = elapsed();
+
+		if (now - last >= min_interval) {
+			last = now;
+
+			min_interval = random_interval(lambda);
+
+			int qty = 1;
+			MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
+			MPI_Bcast(xq + qn * d, d, MPI_FLOAT, 0, search_comm);
+			
+			qn++;
+		}
+	}
+}
+
 void uniform_generator(MPI_Comm search_comm) {
-	double min_interval = 0.01;
+	double min_interval = 0;
 	
 	char query_path[500];
 	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
@@ -214,7 +255,8 @@ void mock_generator(MPI_Comm search_comm) {
 
 void generator(MPI_Comm search_comm) {
 //	mock_generator(search_comm);
-	uniform_generator(search_comm);
+//	uniform_generator(search_comm);
+	poisson_generator(search_comm, 120);
 }
 
 void mock_search(MPI_Comm search_comm) {
