@@ -1,9 +1,14 @@
 #include <mpi.h>
-#include <stdio.h>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <queue>
 #include <assert.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <limits>
 
 #include <faiss/index_io.h>
 #include <faiss/IndexFlat.h>
@@ -15,6 +20,9 @@
 
 #include "readSplittedIndex.h"
 #include "pqueue.h"
+#include <utility>
+
+#include <tuple>
 
 char src_path[] = "/home/rafaelm/Downloads/bigann/";
 int nq = 10000;
@@ -31,6 +39,13 @@ void aggregator(int nshards);
 void search(MPI_Comm search_comm, int nshards);
 
 // aggregator, generator, search
+
+double elapsed ()
+{
+    struct timeval tv;
+    gettimeofday (&tv, nullptr);
+    return  tv.tv_sec + tv.tv_usec * 1e-6;
+}
 
 float* to_float_array(unsigned char* vector, int ne, int d) {
 	float* res = new float[ne * d];
@@ -74,7 +89,8 @@ float * fvecs_read (const char *fname, int *d_out, int *n_out){
         perror("");
         abort();
     }
-    int d;
+    int d;	
+
     assert(fread(&d, 1, sizeof(int), f) == sizeof(int) || !"could not read d");
     assert((d > 0 && d < 1000000) || !"unreasonable dimension");
     fseek(f, 0, SEEK_SET);
@@ -104,6 +120,8 @@ int *ivecs_read(const char *fname, int *d_out, int *n_out)
 }
 
 int main() {
+	srand(1);
+	
     // Initialize the MPI environment
     MPI_Init(NULL, NULL);
 
@@ -138,67 +156,187 @@ int main() {
     MPI_Finalize();
 }
 
-void generator(MPI_Comm search_comm) {
+void uniform_generator(MPI_Comm search_comm) {
+	double min_interval = 0.01;
+	
 	char query_path[500];
 	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
-	
+
 	int world_size;
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-	
+
 	//loading queries
 	size_t fz;
 	unsigned char* queries = bvecs_read(query_path, &fz);
 	float* xq = to_float_array(queries, nq, d);
 	munmap(queries, fz);
 	
-	MPI_Bcast(&nq, 1, MPI_INT, 0, search_comm);
-	MPI_Bcast(xq, nq * d, MPI_FLOAT, 0, search_comm);
+	double last = elapsed();
+	
+	int qn = 0;
+	
+	while (qn != nq) {
+		double now = elapsed();
+		
+		if (now - last >= min_interval) {
+			last = now;
+			
+			int qty = rand() % 10 + 1;
+			
+			if (qn + qty > nq) qty = nq - qn;
+			
+			float query_buffer[qty * d];
+			
+			for (int q = 0; q < qty; q++) {
+				for (int cd = 0; cd < d; cd++) {
+					query_buffer[q * d + cd] = xq[qn * d + cd];
+				}
+				
+				qn++;
+			}
+			
+			MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
+			MPI_Bcast(query_buffer, qty * d, MPI_FLOAT, 0, search_comm);	
+		}
+	}
+}
 
-	std::printf("sent everything\n");
+void mock_generator(MPI_Comm search_comm) {
+	int q = 2;
+	MPI_Bcast(&q, 1, MPI_INT, 0, search_comm);
+	
+	float query[q * d];
+	for (int i = 0; i < q * d; i++) query[i] = 0;
+	
+	MPI_Bcast(query, q * d, MPI_FLOAT, 0, search_comm);
+	std::printf("sent queries\n");
+}
+
+void generator(MPI_Comm search_comm) {
+//	mock_generator(search_comm);
+	uniform_generator(search_comm);
+}
+
+void mock_search(MPI_Comm search_comm) {
+	while (true) {
+		int qty;
+		MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
+
+		float query_buffer[qty * d];
+		MPI_Bcast(query_buffer, qty * d, MPI_FLOAT, 0, search_comm);
+		
+		std::printf("received queries\n");
+
+		faiss::Index::idx_t I[k * qty];
+		float D[k * qty];
+		
+		for (int i = 0; i < k * qty; i++) {
+			I[i] = i;
+			D[i] = i;
+		}
+
+		MPI_Send(&qty, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+		MPI_Send(I, k * qty, MPI_LONG, 0, 1, MPI_COMM_WORLD);
+		MPI_Send(D, k * qty, MPI_FLOAT, 0, 2, MPI_COMM_WORLD);
+		
+		std::printf("sent  results\n");
+	}
 }
 
 void search(MPI_Comm search_comm, int nshards) {
+//	mock_search(search_comm);
+
+//	
 	faiss::gpu::StandardGpuResources res;
 	res.setTempMemory(1536 * 1024 * 1024);
-	
+
 	int search_rank;
 	MPI_Comm_rank(search_comm, &search_rank);
 	int shard = search_rank - 1;
-	
+
 	char index_path[500];
 	sprintf(index_path, "/tmp/index_%d_%d_%d", nb, ncentroids, m);
 	FILE* index_file = fopen(index_path, "r");
 	auto index = read_index(index_file, shard, nshards);
 	dynamic_cast<faiss::IndexIVFPQ*>(index)->nprobe = nprobe;
-	
+
 	if (gpu) index = faiss::gpu::index_cpu_to_gpu(&res, 0, index, nullptr);
-	
-	int nq;
-	MPI_Bcast(&nq, 1, MPI_INT, 0, search_comm);
-	
-	float* xq = new float[nq * d];
-	MPI_Bcast(xq, nq * d, MPI_FLOAT, 0, search_comm);
-	
-	std::printf("received everything\n");
-	
-	
 
-	faiss::Index::idx_t *I = new faiss::Index::idx_t[k * nq];
-	float *D = new float[k * nq];
-	index->search(nq, xq, k, D, I);
+	while (true) {
+		int qty;
+		MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
 
-	std::printf("done searching\n");
-	
-	MPI_Send(&nq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-	MPI_Send(I, k * nq, MPI_LONG, 0, 1, MPI_COMM_WORLD);
-	MPI_Send(D, k * nq, MPI_FLOAT, 0, 2, MPI_COMM_WORLD);
-	
-	delete xq;
-	std::printf("done sending results\n");
+		float query_buffer[qty * d];
+		MPI_Bcast(query_buffer, qty * d, MPI_FLOAT, 0, search_comm);
+		
+		std::printf("received queries\n");
+
+		faiss::Index::idx_t* I = new faiss::Index::idx_t[k * qty];
+		float* D = new float[k * qty];
+		
+		index->search(qty, query_buffer, k, D, I);
+		
+		MPI_Send(&qty, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+		MPI_Send(I, k * qty, MPI_LONG, 0, 1, MPI_COMM_WORLD);
+		MPI_Send(D, k * qty, MPI_FLOAT, 0, 2, MPI_COMM_WORLD);
+		
+		std::printf("sent  results\n");
+		
+		delete[] I;
+		delete[] D;
+	}
+}
+
+struct PartialResult {
+	float* dists;
+	long* ids;
+	bool own_fields;
+};
+
+void merge_results(std::vector<PartialResult>& results, faiss::Index::idx_t* ids, int nshards) {
+	int counter[nshards];
+	for (int i = 0; i < nshards; i++) counter[i] = 0;
+
+	for (int topi = 0; topi < k; topi++) {
+		float bestDist = std::numeric_limits<float>::max();
+		long bestId;
+		int fromShard;
+
+		for (int shard = 0; shard < nshards; shard++) {
+			if (counter[shard] == k) continue;
+
+			if (results[shard].dists[counter[shard]] < bestDist) {
+				bestDist = results[shard].dists[counter[shard]];
+				bestId = results[shard].ids[counter[shard]];
+				fromShard = shard;
+			}
+		}
+
+		ids[topi] = bestId;
+		counter[fromShard]++;
+	}
+}
+
+void mock_aggregator() {
+	while (true) {
+		MPI_Status status;
+		int qty;
+		MPI_Recv(&qty, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+
+		auto I = new faiss::Index::idx_t[k * qty];
+		auto D = new float[k * qty];
+
+		MPI_Recv(I, k * qty, MPI_LONG, status.MPI_SOURCE, 1, MPI_COMM_WORLD,
+		MPI_STATUS_IGNORE);
+		MPI_Recv(D, k * qty, MPI_FLOAT, status.MPI_SOURCE, 2, MPI_COMM_WORLD,
+		MPI_STATUS_IGNORE);
+		
+		std::printf("received  results\n");
+	}
 }
 
 void aggregator(int nshards) {
-	// load ground-truth and convert int to long
+//	 load ground-truth and convert int to long
 	char idx_path[1000];
 	char gt_path[500];
 	sprintf(gt_path, "%s/gnd", src_path);
@@ -213,69 +351,90 @@ void aggregator(int nshards) {
 	}
 
 	delete[] gt_int;
-		
-	int total = 0;
-
-	std::pair<float, long>* bases = new std::pair<float, long>[nq * k];
-	pqueue* pq = static_cast<pqueue*>(malloc(sizeof(pqueue) * nq));
 	
-	for (int q = 0; q < nq; q++) {
-		pq[q] = pqueue(bases + k * q, k);
-	}
 	
-	faiss::Index::idx_t* finalI = new faiss::Index::idx_t[k * nq];
-	float* finalD = new float[k * nq];
+//		mock_aggregator();
 	
-	while (total != nshards) {
-		MPI_Status status;
-		int nq;
-		MPI_Recv(&nq, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
-				
-		faiss::Index::idx_t* I = new faiss::Index::idx_t[k * nq];
-		float* D = new float[k * nq];
-		
-		MPI_Recv(I, k * nq, MPI_LONG, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		MPI_Recv(D, k * nq, MPI_FLOAT, status.MPI_SOURCE, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		
-		for (int q = 0; q < nq; q++) {
-			for (int j = 0; j < k; j++) {
-				pq[q].add(D[q*k+j], I[q*k+j]);
-			}
-			
-		}
-		
-		total++;
-		
-		delete D;
-		delete I;
-	}
 	
-	for (int q = 0; q < nq; q++) {
-		for (int j = k - 1; j >= 0; j--) {
-			auto v = pq[q].pop();
-			finalD[q*k+j] = v.first;
-			finalI[q*k+j] = v.second;
-		}
-	}
-	
-	std::printf("aggregated everything\n");
+	std::queue<PartialResult> queue[nshards];
+	std::queue<PartialResult> to_delete[nshards];
 	
 	int n_1 = 0, n_10 = 0, n_100 = 0;
-	for (int i = 0; i < nq; i++) {
-		int gt_nn = gt[i * k];
-		for (int j = 0; j < k; j++) {
-			if (finalI[i * k + j] == gt_nn) {
-				if (j < 1)
-					n_1++;
-				if (j < 10)
-					n_10++;
-				if (j < 100)
-					n_100++;
+	int qn = 0;
+	
+	while (true) {
+		MPI_Status status;
+		int qty;
+		MPI_Recv(&qty, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+		
+//		std::printf("received qty %d\n", qty);
+		
+		int from = status.MPI_SOURCE - 2;
+		
+		auto I = new faiss::Index::idx_t[k * qty];
+		auto D = new float[k * qty];
+		
+		MPI_Recv(I, k * qty, MPI_LONG, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		MPI_Recv(D, k * qty, MPI_FLOAT, status.MPI_SOURCE, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		
+//		std::printf("received result, D[3] = %.2f\n", D[3]);
+		
+		for (int q = 0; q < qty; q++) {
+			queue[from].push({D + k * q, I + k * q, q == 0});
+		}
+		
+//		std::printf("stored result in queue\n");
+		
+		while (true) {
+			bool hasEmpty = false;
+			
+			for (int i = 0; i < nshards; i++) {
+				if (queue[i].empty()) {
+					hasEmpty = true;
+					break;
+				}
+			}
+			
+			if (hasEmpty) break;
+			
+//			std::printf("processing a result\n");
+			
+			std::vector<PartialResult> results(nshards);
+			for (int shard = 0; shard < nshards; shard++) {
+				results[shard] = queue[shard].front();
+				if (results[shard].own_fields) to_delete[shard].push(results[shard]);
+				queue[shard].pop();
+			}
+			
+//			std::printf("picking a result by shard\n");
+			
+			faiss::Index::idx_t ids[k];
+			merge_results(results, ids, nshards);
+			
+			int gt_nn = gt[qn * k];
+			
+			for (int j = 0; j < k; j++) {
+				if (ids[j] == gt_nn) {
+					if (j < 1)
+						n_1++;
+					if (j < 10)
+						n_10++;
+					if (j < 100)
+						n_100++;
+				}
+			}
+			
+			qn++;
+			
+			std::printf("%.2f\n", 100.0 * n_100 / qn);
+		}
+		
+		for (int shard = 0; shard < nshards; shard++) {
+			while (! to_delete[shard].empty()) {
+				delete[] to_delete[shard].front().dists;
+				delete[] to_delete[shard].front().ids;
+				to_delete[shard].pop();
 			}
 		}
 	}
-
-	printf("R@1 = %.4f\n", n_1 / float(nq));
-	printf("R@10 = %.4f\n", n_10 / float(nq));
-	printf("R@100 = %.4f\n", n_100 / float(nq));
 }
