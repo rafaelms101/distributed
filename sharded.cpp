@@ -10,9 +10,9 @@
 #include <sys/time.h>
 #include <limits>
 
-#include <faiss/index_io.h>
-#include <faiss/IndexFlat.h>
-#include <faiss/IndexIVFPQ.h>
+#include "faiss/index_io.h"
+#include "faiss/IndexFlat.h"
+#include "faiss/IndexIVFPQ.h"
 
 #include "gpu/GpuAutoTune.h"
 #include "gpu/StandardGpuResources.h"
@@ -24,7 +24,7 @@
 
 #include <tuple>
 
-char src_path[] = "/home/rafaelm/Downloads/bigann/";
+char src_path[] = "/home/rafael/mestrado/bigann/";
 int nq = 10000;
 int d = 128;
 int k = 1000;
@@ -120,6 +120,7 @@ int *ivecs_read(const char *fname, int *d_out, int *n_out)
 }
 
 int main() {
+//	std::printf("started\n");
 	srand(1);
 	
     // Initialize the MPI environment
@@ -162,6 +163,9 @@ double random_interval(double lambda) {
 }
 
 void poisson_generator(MPI_Comm search_comm, double lambda) {
+	double start_time[nq];
+	double end_time[nq];
+
 	double min_interval = 0;
 
 	char query_path[500];
@@ -191,10 +195,25 @@ void poisson_generator(MPI_Comm search_comm, double lambda) {
 			int qty = 1;
 			MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
 			MPI_Bcast(xq + qn * d, d, MPI_FLOAT, 0, search_comm);
-			
+//			std::printf("start %d %lf\n", qn, elapsed());
+			start_time[qn] = elapsed();
 			qn++;
 		}
 	}
+
+	MPI_Recv(end_time, nq, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	
+	for (int i = 0; i < nq; i++) {
+		double diff = end_time[i] - start_time[i];
+		
+		if (diff < 0) {
+			std::printf("NEGATIVE TIME DETECTED\nstart=%lf,end=%lf\n",
+					start_time[i], end_time[i]);
+		}
+		
+		std::printf("%lf\n", diff);
+	}
+
 }
 
 void uniform_generator(MPI_Comm search_comm) {
@@ -238,25 +257,33 @@ void uniform_generator(MPI_Comm search_comm) {
 			
 			MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
 			MPI_Bcast(query_buffer, qty * d, MPI_FLOAT, 0, search_comm);	
+			std::printf("sent %d\n", qn);
 		}
 	}
 }
 
 void mock_generator(MPI_Comm search_comm) {
+	static int qb = 0;
+
 	int q = 2;
 	MPI_Bcast(&q, 1, MPI_INT, 0, search_comm);
 	
 	float query[q * d];
 	for (int i = 0; i < q * d; i++) query[i] = 0;
 	
+	qb++;
+
 	MPI_Bcast(query, q * d, MPI_FLOAT, 0, search_comm);
-	std::printf("sent queries\n");
+	std::printf("sent:%d\n", qb);
 }
 
 void generator(MPI_Comm search_comm) {
+//	std::printf("generator\n");
 //	mock_generator(search_comm);
+//	return;
+
 //	uniform_generator(search_comm);
-	poisson_generator(search_comm, 120);
+	poisson_generator(search_comm, 500);
 }
 
 void mock_search(MPI_Comm search_comm) {
@@ -280,13 +307,15 @@ void mock_search(MPI_Comm search_comm) {
 		MPI_Send(&qty, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
 		MPI_Send(I, k * qty, MPI_LONG, 0, 1, MPI_COMM_WORLD);
 		MPI_Send(D, k * qty, MPI_FLOAT, 0, 2, MPI_COMM_WORLD);
-		
-		std::printf("sent  results\n");
+//
+//		std::printf("sent  results\n");
 	}
 }
 
 void search(MPI_Comm search_comm, int nshards) {
+//	std::printf("search\n");
 //	mock_search(search_comm);
+//	return;
 
 //	
 	faiss::gpu::StandardGpuResources res;
@@ -297,21 +326,23 @@ void search(MPI_Comm search_comm, int nshards) {
 	int shard = search_rank - 1;
 
 	char index_path[500];
-	sprintf(index_path, "/tmp/index_%d_%d_%d", nb, ncentroids, m);
+	sprintf(index_path, "index/index_%d_%d_%d", nb, ncentroids, m);
 	FILE* index_file = fopen(index_path, "r");
 	auto index = read_index(index_file, shard, nshards);
 	dynamic_cast<faiss::IndexIVFPQ*>(index)->nprobe = nprobe;
 
 	if (gpu) index = faiss::gpu::index_cpu_to_gpu(&res, 0, index, nullptr);
 
-	while (true) {
+	int qn = 0;
+
+	while (qn != nq) {
 		int qty;
 		MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
 
 		float query_buffer[qty * d];
 		MPI_Bcast(query_buffer, qty * d, MPI_FLOAT, 0, search_comm);
 		
-		std::printf("received queries\n");
+//		std::printf("received queries\n");
 
 		faiss::Index::idx_t* I = new faiss::Index::idx_t[k * qty];
 		float* D = new float[k * qty];
@@ -322,7 +353,8 @@ void search(MPI_Comm search_comm, int nshards) {
 		MPI_Send(I, k * qty, MPI_LONG, 0, 1, MPI_COMM_WORLD);
 		MPI_Send(D, k * qty, MPI_FLOAT, 0, 2, MPI_COMM_WORLD);
 		
-		std::printf("sent  results\n");
+//		std::printf("sent  results\n");
+		qn += qty;
 		
 		delete[] I;
 		delete[] D;
@@ -378,6 +410,9 @@ void mock_aggregator() {
 }
 
 void aggregator(int nshards) {
+	double end_time[nq];
+
+//	std::printf("aggregator\n");
 //	 load ground-truth and convert int to long
 	char idx_path[1000];
 	char gt_path[500];
@@ -394,8 +429,9 @@ void aggregator(int nshards) {
 
 	delete[] gt_int;
 	
-	
-//		mock_aggregator();
+//
+//	mock_aggregator();
+//	return;
 	
 	
 	std::queue<PartialResult> queue[nshards];
@@ -404,7 +440,7 @@ void aggregator(int nshards) {
 	int n_1 = 0, n_10 = 0, n_100 = 0;
 	int qn = 0;
 	
-	while (true) {
+	while (qn != nq) {
 		MPI_Status status;
 		int qty;
 		MPI_Recv(&qty, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
@@ -453,22 +489,25 @@ void aggregator(int nshards) {
 			faiss::Index::idx_t ids[k];
 			merge_results(results, ids, nshards);
 			
-			int gt_nn = gt[qn * k];
-			
-			for (int j = 0; j < k; j++) {
-				if (ids[j] == gt_nn) {
-					if (j < 1)
-						n_1++;
-					if (j < 10)
-						n_10++;
-					if (j < 100)
-						n_100++;
-				}
-			}
-			
+//			std::printf("end %d %lf\n", qn, elapsed());
+			end_time[qn] = elapsed();
+
+//			int gt_nn = gt[qn * k];
+//
+//			for (int j = 0; j < k; j++) {
+//				if (ids[j] == gt_nn) {
+//					if (j < 1)
+//						n_1++;
+//					if (j < 10)
+//						n_10++;
+//					if (j < 100)
+//						n_100++;
+//				}
+//			}
+//
 			qn++;
-			
-			std::printf("%.2f\n", 100.0 * n_100 / qn);
+//
+//			std::printf("%.2f\n", 100.0 * n_100 / qn);
 		}
 		
 		for (int shard = 0; shard < nshards; shard++) {
@@ -479,4 +518,6 @@ void aggregator(int nshards) {
 			}
 		}
 	}
+
+	MPI_Send(end_time, nq, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
 }

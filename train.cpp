@@ -104,7 +104,7 @@ double elapsed ()
 
 int main(int argc, char** argv) {
 	if (argc != 5) {
-		std::printf("Usage: ./mydemo size centroids pq nprobe nqueries gpu\n");
+		std::printf("Usage: ./train size centroids pq nprobe nqueries gpu\n");
 		std::exit(-1);
 	}
 	
@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
     int m = atoi(argv[3]);    
     int nprobe = atoi(argv[4]);
     
-    char src_path[] = "/home/rafaelm/Downloads/bigann/";
+    char src_path[] = "/home/rafael/mestrado/bigann/";
     char learn_path[500];
     char data_path[500];
     char query_path[500];
@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
     res.setTempMemory(1536 * 1024 * 1024);
     
     char index_path[500];
-    sprintf(index_path, "/tmp/index_%d_%d_%d", nb, ncentroids, m);
+    sprintf(index_path, "index/index_%d_%d_%d", nb, ncentroids, m);
     
     faiss::Index* index;
 
