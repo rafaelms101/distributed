@@ -225,6 +225,10 @@ void generator(MPI_Comm search_comm) {
 	
 	int id = -1;
 	
+	int block_size = 1000;
+	float query_buffer[block_size * d];
+	int queries_in_buffer = 0;
+	
 	while (true) {
 		int id = next_query();
 		
@@ -234,10 +238,14 @@ void generator(MPI_Comm search_comm) {
 		start_time[id] = elapsed();
 		
 		// do what you must
-		int qty = 1;
-
-		MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
-		MPI_Bcast(xq + id * d, d, MPI_FLOAT, 0, search_comm);
+		memcpy(query_buffer + queries_in_buffer * d, xq + id * d, d * sizeof(float));
+		queries_in_buffer++;
+		
+		if (queries_in_buffer == block_size) {
+			MPI_Bcast(&block_size, 1, MPI_INT, 0, search_comm);
+			MPI_Bcast(query_buffer, block_size * d, MPI_FLOAT, 0, search_comm);
+			queries_in_buffer = 0;
+		}
 	}
 	
 	MPI_Recv(end_time, nq, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
