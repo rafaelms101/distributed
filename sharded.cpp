@@ -157,117 +157,13 @@ int main() {
     MPI_Finalize();
 }
 
-double random_interval(double lambda) {
+double uniform_interval(double val) {
+	return val;
+}
+
+double poisson_interval(double lambda) {
 	double r = static_cast<double>(rand()) / static_cast<double>(RAND_MAX);
 	return - log(r) / lambda;
-}
-
-void poisson_generator(MPI_Comm search_comm, double lambda) {
-	int block_size = 100;
-	
-	double start_time[nq];
-	double end_time[nq];
-
-	double min_interval = 0;
-
-	char query_path[500];
-	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
-
-	int world_size;
-	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
-	//loading queries
-	size_t fz;
-	unsigned char* queries = bvecs_read(query_path, &fz);
-	float* xq = to_float_array(queries, nq, d);
-	munmap(queries, fz);
-
-	double last = elapsed();
-
-	int qn = 0;
-
-	while (qn != nq) {
-		double now = elapsed();
-
-		if (now - last >= min_interval) {
-			last = now;
-
-			min_interval = random_interval(lambda);
-			
-			int qty = block_size;
-			
-			double start = elapsed();
-			for (int i = 0; i < block_size; i++) start_time[qn + i] = start;
-			
-			MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
-			MPI_Bcast(xq + qn * d, block_size * d, MPI_FLOAT, 0, search_comm);
-//			std::printf("start %d %lf\n", qn, elapsed());
-			
-			
-			
-			qn += block_size;
-		}
-	}
-
-	MPI_Recv(end_time, nq, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	
-	for (int i = 0; i < nq; i++) {
-		double diff = end_time[i] - start_time[i];
-		
-		if (diff < 0) {
-			std::printf("NEGATIVE TIME DETECTED\nstart=%lf,end=%lf\n",
-					start_time[i], end_time[i]);
-		}
-		
-		std::printf("%lf\n", diff);
-	}
-
-}
-
-void uniform_generator(MPI_Comm search_comm) {
-	double min_interval = 0;
-	
-	char query_path[500];
-	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
-
-	int world_size;
-	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
-	//loading queries
-	size_t fz;
-	unsigned char* queries = bvecs_read(query_path, &fz);
-	float* xq = to_float_array(queries, nq, d);
-	munmap(queries, fz);
-	
-	double last = elapsed();
-	
-	int qn = 0;
-	
-	while (qn != nq) {
-		double now = elapsed();
-		
-		if (now - last >= min_interval) {
-			last = now;
-			
-			int qty = rand() % 10 + 1;
-			
-			if (qn + qty > nq) qty = nq - qn;
-			
-			float query_buffer[qty * d];
-			
-			for (int q = 0; q < qty; q++) {
-				for (int cd = 0; cd < d; cd++) {
-					query_buffer[q * d + cd] = xq[qn * d + cd];
-				}
-				
-				qn++;
-			}
-			
-			MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
-			MPI_Bcast(query_buffer, qty * d, MPI_FLOAT, 0, search_comm);	
-			std::printf("sent %d\n", qn);
-		}
-	}
 }
 
 void mock_generator(MPI_Comm search_comm) {
@@ -285,13 +181,75 @@ void mock_generator(MPI_Comm search_comm) {
 	std::printf("sent:%d\n", qb);
 }
 
-void generator(MPI_Comm search_comm) {
-//	std::printf("generator\n");
-//	mock_generator(search_comm);
-//	return;
+int next_query() {
+	static int qn = 0;
+	static double start = 0;
+	static double interval = 0;
+	
+	if (qn == nq) return -2;
+	
+	double now = elapsed();
+	
+	if (now - start < interval) return -1;
+	
+	start = now;
+	interval = uniform_interval(0);
+	
+	qn++;
+	return qn - 1; 
+}
 
-//	uniform_generator(search_comm);
-	poisson_generator(search_comm, 500);
+float* load_queries() {
+	char query_path[500];
+	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
+
+	int world_size;
+	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+	//loading queries
+	size_t fz;
+	unsigned char* queries = bvecs_read(query_path, &fz);
+	float* xq = to_float_array(queries, nq, d);
+	munmap(queries, fz);
+	
+	return xq;
+}
+
+void generator(MPI_Comm search_comm) {
+//	mock_generator(search_comm);
+	
+	double start_time[nq];
+	double end_time[nq];
+	
+	float* xq = load_queries();
+	
+	int id = -1;
+	
+	while (true) {
+		int id = next_query();
+		
+		if (id == -1) continue;
+		if (id == -2) break;
+		
+		start_time[id] = elapsed();
+		
+		// do what you must
+		int qty = 1;
+
+		MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
+		MPI_Bcast(xq + id * d, d, MPI_FLOAT, 0, search_comm);
+	}
+	
+	MPI_Recv(end_time, nq, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+	double total = 0;
+	
+	for (int i = 0; i < nq; i++) {
+		total += end_time[i] - start_time[i];
+	}
+	
+	std::printf("Average response time: %lf\n", total / nq);
+	std::printf("Total time: %lf\n", end_time[nq - 1] - start_time[0]);
 }
 
 void mock_search(MPI_Comm search_comm) {
@@ -420,7 +378,6 @@ void mock_aggregator() {
 void aggregator(int nshards) {
 	double end_time[nq];
 
-//	std::printf("aggregator\n");
 //	 load ground-truth and convert int to long
 	char idx_path[1000];
 	char gt_path[500];
@@ -437,11 +394,6 @@ void aggregator(int nshards) {
 
 	delete[] gt_int;
 	
-//
-//	mock_aggregator();
-//	return;
-	
-	
 	std::queue<PartialResult> queue[nshards];
 	std::queue<PartialResult> to_delete[nshards];
 	
@@ -453,7 +405,6 @@ void aggregator(int nshards) {
 		int qty;
 		MPI_Recv(&qty, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
 		
-//		std::printf("received qty %d\n", qty);
 		
 		int from = status.MPI_SOURCE - 2;
 		
@@ -463,13 +414,11 @@ void aggregator(int nshards) {
 		MPI_Recv(I, k * qty, MPI_LONG, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		MPI_Recv(D, k * qty, MPI_FLOAT, status.MPI_SOURCE, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		
-//		std::printf("received result, D[3] = %.2f\n", D[3]);
 		
 		for (int q = 0; q < qty; q++) {
 			queue[from].push({D + k * q, I + k * q, q == 0});
 		}
 		
-//		std::printf("stored result in queue\n");
 		
 		while (true) {
 			bool hasEmpty = false;
@@ -483,7 +432,6 @@ void aggregator(int nshards) {
 			
 			if (hasEmpty) break;
 			
-//			std::printf("processing a result\n");
 			
 			std::vector<PartialResult> results(nshards);
 			for (int shard = 0; shard < nshards; shard++) {
@@ -491,13 +439,10 @@ void aggregator(int nshards) {
 				if (results[shard].own_fields) to_delete[shard].push(results[shard]);
 				queue[shard].pop();
 			}
-			
-//			std::printf("picking a result by shard\n");
-			
+						
 			faiss::Index::idx_t ids[k];
 			merge_results(results, ids, nshards);
 			
-//			std::printf("end %d %lf\n", qn, elapsed());
 			end_time[qn] = elapsed();
 
 //			int gt_nn = gt[qn * k];
@@ -512,10 +457,11 @@ void aggregator(int nshards) {
 //						n_100++;
 //				}
 //			}
-//
-			qn++;
+//		
 //
 //			std::printf("%.2f\n", 100.0 * n_100 / qn);
+			
+			qn++;
 		}
 		
 		for (int shard = 0; shard < nshards; shard++) {
