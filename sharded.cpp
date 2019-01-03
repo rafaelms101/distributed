@@ -163,6 +163,8 @@ double random_interval(double lambda) {
 }
 
 void poisson_generator(MPI_Comm search_comm, double lambda) {
+	int block_size = 100;
+	
 	double start_time[nq];
 	double end_time[nq];
 
@@ -191,13 +193,19 @@ void poisson_generator(MPI_Comm search_comm, double lambda) {
 			last = now;
 
 			min_interval = random_interval(lambda);
-
-			int qty = 1;
+			
+			int qty = block_size;
+			
+			double start = elapsed();
+			for (int i = 0; i < block_size; i++) start_time[qn + i] = start;
+			
 			MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
-			MPI_Bcast(xq + qn * d, d, MPI_FLOAT, 0, search_comm);
+			MPI_Bcast(xq + qn * d, block_size * d, MPI_FLOAT, 0, search_comm);
 //			std::printf("start %d %lf\n", qn, elapsed());
-			start_time[qn] = elapsed();
-			qn++;
+			
+			
+			
+			qn += block_size;
 		}
 	}
 
