@@ -31,7 +31,7 @@ int k = 1000;
 int nb = 1000000; 
 int ncentroids = 256; 
 int m = 8;
-bool gpu = true;
+bool gpu = false;
 int nprobe = 4;
 
 void generator(MPI_Comm search_comm);
@@ -157,7 +157,7 @@ int main() {
     MPI_Finalize();
 }
 
-double uniform_interval(double val) {
+double constant_interval(double val) {
 	return val;
 }
 
@@ -181,24 +181,6 @@ void mock_generator(MPI_Comm search_comm) {
 	std::printf("sent:%d\n", qb);
 }
 
-int next_query() {
-	static int qn = 0;
-	static double start = 0;
-	static double interval = 0;
-	
-	if (qn == nq) return -2;
-	
-	double now = elapsed();
-	
-	if (now - start < interval) return -1;
-	
-	start = now;
-	interval = uniform_interval(0);
-	
-	qn++;
-	return qn - 1; 
-}
-
 float* load_queries() {
 	char query_path[500];
 	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
@@ -215,27 +197,52 @@ float* load_queries() {
 	return xq;
 }
 
+int next_query(double* offset_time, int size, double start) {
+	static int qn = 0;
+	
+	if (qn == size) return -2;
+	
+	double now = elapsed();
+	
+	if (now < offset_time[qn] + start) return -1;
+	
+	return qn++; 
+}
+
+void fill_offset_time(double* offset_time, int length) {
+	double offset = 0;
+	
+	for (int i = 0; i < length; i++) {
+		offset_time[i] = offset;
+		offset += constant_interval(0);
+	}
+}
+
 void generator(MPI_Comm search_comm) {
 //	mock_generator(search_comm);
 	
-	double start_time[nq];
+	int block_size = 10000;
+	
+	double offset_time[nq];
 	double end_time[nq];
+	
+	fill_offset_time(offset_time, nq);
 	
 	float* xq = load_queries();
 	
-	int id = -1;
 	
-	int block_size = 1000;
 	float query_buffer[block_size * d];
 	int queries_in_buffer = 0;
 	
+	double start = elapsed();
+	
 	while (true) {
-		int id = next_query();
+		int id = next_query(offset_time, nq, start);
 		
 		if (id == -1) continue;
 		if (id == -2) break;
 		
-		start_time[id] = elapsed();
+//		std::printf("query %d\n", id);
 		
 		// do what you must
 		memcpy(query_buffer + queries_in_buffer * d, xq + id * d, d * sizeof(float));
@@ -253,11 +260,11 @@ void generator(MPI_Comm search_comm) {
 	double total = 0;
 	
 	for (int i = 0; i < nq; i++) {
-		total += end_time[i] - start_time[i];
+		total += end_time[i] - (start + offset_time[i]);
 	}
 	
 	std::printf("Average response time: %lf\n", total / nq);
-	std::printf("Total time: %lf\n", end_time[nq - 1] - start_time[0]);
+	std::printf("Total time: %lf\n", end_time[nq - 1] - start);
 }
 
 void mock_search(MPI_Comm search_comm) {
@@ -347,8 +354,8 @@ void merge_results(std::vector<PartialResult>& results, faiss::Index::idx_t* ids
 
 	for (int topi = 0; topi < k; topi++) {
 		float bestDist = std::numeric_limits<float>::max();
-		long bestId;
-		int fromShard;
+		long bestId = -1;
+		int fromShard = -1;
 
 		for (int shard = 0; shard < nshards; shard++) {
 			if (counter[shard] == k) continue;
@@ -405,7 +412,7 @@ void aggregator(int nshards) {
 	std::queue<PartialResult> queue[nshards];
 	std::queue<PartialResult> to_delete[nshards];
 	
-	int n_1 = 0, n_10 = 0, n_100 = 0;
+//	int n_1 = 0, n_10 = 0, n_100 = 0;
 	int qn = 0;
 	
 	while (qn != nq) {
@@ -452,7 +459,7 @@ void aggregator(int nshards) {
 			merge_results(results, ids, nshards);
 			
 			end_time[qn] = elapsed();
-
+//
 //			int gt_nn = gt[qn * k];
 //
 //			for (int j = 0; j < k; j++) {
