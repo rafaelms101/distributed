@@ -24,19 +24,36 @@
 
 #include <tuple>
 
+#include <unistd.h>
+
+//#define BENCHMARK
+#define AGGREGATOR 0
+#define GENERATOR 1
+
 char src_path[] = "/home/rafael/mestrado/bigann/";
-int nq = 10000;
+
+#ifdef BENCHMARK
+	int nq = 2500;
+#else
+	int nq = 10000;
+#endif
+
 int d = 128;
-int k = 1000;
+int k = 10;
 int nb = 1000000; 
 int ncentroids = 256; 
 int m = 8;
 bool gpu = false;
 int nprobe = 4;
+int block_size = 1;
 
 void generator(MPI_Comm search_comm);
 void aggregator(int nshards);
 void search(MPI_Comm search_comm, int nshards);
+
+enum MESSAGE_TAGS {
+	
+};
 
 // aggregator, generator, search
 
@@ -119,7 +136,14 @@ int *ivecs_read(const char *fname, int *d_out, int *n_out)
     return (int*)fvecs_read(fname, d_out, n_out);
 }
 
-int main() {
+int main(int argc, char** argv) {
+	if (argc != 2) {
+		std::printf("Usage: ./sharded block_size\n");
+		std::exit(-1);
+	}
+
+	block_size = atoi(argv[1]);
+	
 //	std::printf("started\n");
 	srand(1);
 	
@@ -218,18 +242,67 @@ void fill_offset_time(double* offset_time, int length) {
 	}
 }
 
+
+void bench_generator(MPI_Comm search_comm, float* xq) {
+	double time_before_send[nq];
+	
+	for (int block_size = 10; block_size < nq; block_size += 10) {
+		time_before_send[block_size] = elapsed();
+		
+		MPI_Bcast(&block_size, 1, MPI_INT, 0, search_comm);
+		MPI_Bcast(xq, block_size * d, MPI_FLOAT, 0, search_comm);
+		
+		//receive ending confirmation
+		int whatever;
+		MPI_Recv(&whatever, 1, MPI_INT, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		
+		std::printf("%d done\n", block_size);
+	}
+	
+	std::printf("generator after for\n");
+	
+	double end_time[nq];
+	MPI_Recv(end_time, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	
+	std::printf("generator received end_time\n");
+	
+	
+	/*
+	 * Getting & Processing time tables
+	 */
+	
+	//receiving timetables for aggregation
+	double time_aggr_in[nq];
+	double time_aggr_free[nq];
+		
+	std::printf("Receiving aggregator time\n");
+	MPI_Recv(time_aggr_in, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	MPI_Recv(time_aggr_free, nq, MPI_DOUBLE, AGGREGATOR, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	
+	std::printf("generator finished\n");
+	
+	for (int block_size = 10; block_size < nq; block_size += 10) {
+		std::printf("%d %lf %lf %lf\n",
+				block_size,
+				time_aggr_in[block_size] - time_before_send[block_size],
+				time_aggr_free[block_size] - time_before_send[block_size],
+				time_aggr_free[block_size] - time_aggr_in[block_size]);
+	}
+}
+
 void generator(MPI_Comm search_comm) {
+	float* xq = load_queries();
+	
+	#ifdef BENCHMARK
+		bench_generator(search_comm, xq);
+		return;
+	#endif
+	
 //	mock_generator(search_comm);
-	
-	int block_size = 10000;
-	
 	double offset_time[nq];
 	double end_time[nq];
 	
 	fill_offset_time(offset_time, nq);
-	
-	float* xq = load_queries();
-	
 	
 	float query_buffer[block_size * d];
 	int queries_in_buffer = 0;
@@ -255,7 +328,7 @@ void generator(MPI_Comm search_comm) {
 		}
 	}
 	
-	MPI_Recv(end_time, nq, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	MPI_Recv(end_time, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
 	double total = 0;
 	
@@ -265,6 +338,7 @@ void generator(MPI_Comm search_comm) {
 	
 	std::printf("Average response time: %lf\n", total / nq);
 	std::printf("Total time: %lf\n", end_time[nq - 1] - start);
+//	std::printf("%lf %lf\n", total / nq, end_time[nq - 1] - start);
 }
 
 void mock_search(MPI_Comm search_comm) {
@@ -294,13 +368,8 @@ void mock_search(MPI_Comm search_comm) {
 }
 
 void search(MPI_Comm search_comm, int nshards) {
-//	std::printf("search\n");
-//	mock_search(search_comm);
-//	return;
-
-//	
 	faiss::gpu::StandardGpuResources res;
-	res.setTempMemory(1536 * 1024 * 1024);
+//	res.setTempMemory(1536 * 1024 * 1024);
 
 	int search_rank;
 	MPI_Comm_rank(search_comm, &search_rank);
@@ -317,24 +386,25 @@ void search(MPI_Comm search_comm, int nshards) {
 	int qn = 0;
 
 	while (qn != nq) {
+		#ifdef BENCHMARK
+			qn = 10;
+		#endif
+		
 		int qty;
 		MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
 
 		float query_buffer[qty * d];
 		MPI_Bcast(query_buffer, qty * d, MPI_FLOAT, 0, search_comm);
 		
-//		std::printf("received queries\n");
-
 		faiss::Index::idx_t* I = new faiss::Index::idx_t[k * qty];
 		float* D = new float[k * qty];
 		
 		index->search(qty, query_buffer, k, D, I);
 		
-		MPI_Send(&qty, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-		MPI_Send(I, k * qty, MPI_LONG, 0, 1, MPI_COMM_WORLD);
-		MPI_Send(D, k * qty, MPI_FLOAT, 0, 2, MPI_COMM_WORLD);
+		MPI_Send(&qty, 1, MPI_INT, AGGREGATOR, 0, MPI_COMM_WORLD);
+		MPI_Send(I, k * qty, MPI_LONG, AGGREGATOR, 1, MPI_COMM_WORLD);
+		MPI_Send(D, k * qty, MPI_FLOAT, AGGREGATOR, 2, MPI_COMM_WORLD);
 		
-//		std::printf("sent  results\n");
 		qn += qty;
 		
 		delete[] I;
@@ -391,6 +461,11 @@ void mock_aggregator() {
 }
 
 void aggregator(int nshards) {
+	#ifdef BENCHMARK
+		double time_aggr_in[nq];
+		double time_aggr_free[nq];
+	#endif
+	
 	double end_time[nq];
 
 //	 load ground-truth and convert int to long
@@ -399,7 +474,8 @@ void aggregator(int nshards) {
 	sprintf(gt_path, "%s/gnd", src_path);
 	sprintf(idx_path, "%s/idx_%dM.ivecs", gt_path, nb / 1000000);
 
-	int *gt_int = ivecs_read(idx_path, &k, &nq);
+	int whatever;
+	int *gt_int = ivecs_read(idx_path, &k, &whatever);
 
 	faiss::Index::idx_t* gt = new faiss::Index::idx_t[k * nq];
 
@@ -416,9 +492,19 @@ void aggregator(int nshards) {
 	int qn = 0;
 	
 	while (qn != nq) {
+//		std::printf("qn=%d nq=%d\n", qn, nq);
+		#ifdef BENCHMARK
+			qn = 10;
+		#endif
+		
 		MPI_Status status;
 		int qty;
 		MPI_Recv(&qty, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+		
+		#ifdef BENCHMARK
+			time_aggr_in[qty] = elapsed();
+//			std::printf("aggregator %d %lf\n", qty, time_aggr_in[qty]);
+		#endif
 		
 		
 		int from = status.MPI_SOURCE - 2;
@@ -429,25 +515,22 @@ void aggregator(int nshards) {
 		MPI_Recv(I, k * qty, MPI_LONG, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		MPI_Recv(D, k * qty, MPI_FLOAT, status.MPI_SOURCE, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		
-		
 		for (int q = 0; q < qty; q++) {
 			queue[from].push({D + k * q, I + k * q, q == 0});
 		}
 		
+		bool hasEmpty = false;
 		
-		while (true) {
-			bool hasEmpty = false;
-			
-			for (int i = 0; i < nshards; i++) {
-				if (queue[i].empty()) {
-					hasEmpty = true;
-					break;
-				}
+		for (int i = 0; i < nshards; i++) {
+			if (queue[i].empty()) {
+				hasEmpty = true;
+				break;
 			}
-			
-			if (hasEmpty) break;
-			
-			
+		}
+		
+		if (hasEmpty) continue;
+		
+		for (int i = 0; i < qty; i++) {
 			std::vector<PartialResult> results(nshards);
 			for (int shard = 0; shard < nshards; shard++) {
 				results[shard] = queue[shard].front();
@@ -486,7 +569,22 @@ void aggregator(int nshards) {
 				to_delete[shard].pop();
 			}
 		}
+
+		#ifdef BENCHMARK
+			time_aggr_free[qty] = elapsed();
+			int whatever;
+			MPI_Send(&whatever, 1, MPI_INT, GENERATOR, 0, MPI_COMM_WORLD);
+		#endif
 	}
 
-	MPI_Send(end_time, nq, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+//	std::printf("aggregator sending\n");
+	
+	MPI_Send(end_time, nq, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
+	
+	#ifdef BENCHMARK
+		MPI_Send(time_aggr_in, nq, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
+		MPI_Send(time_aggr_free, nq, MPI_DOUBLE, GENERATOR, 1, MPI_COMM_WORLD);
+	#endif	
+		
+//	std::printf("aggregator finished\n");
 }
