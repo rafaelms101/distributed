@@ -19,12 +19,12 @@
 #include "gpu/GpuIndexIVFPQ.h"
 
 #include "readSplittedIndex.h"
-#include "pqueue.h"
+
+#include <fstream>
 #include <utility>
-
 #include <tuple>
-
 #include <unistd.h>
+
 
 //#define BENCHMARK
 #define AGGREGATOR 0
@@ -45,9 +45,10 @@ int ncentroids = 256;
 int m = 8;
 bool gpu = false;
 int nprobe = 4;
-int block_size = 1;
+//int block_size = 1;
 
 void generator(MPI_Comm search_comm);
+void single_block_size_generator(MPI_Comm search_comm, int block_size);
 void aggregator(int nshards);
 void search(MPI_Comm search_comm, int nshards);
 
@@ -137,12 +138,24 @@ int *ivecs_read(const char *fname, int *d_out, int *n_out)
 }
 
 int main(int argc, char** argv) {
-	if (argc != 2) {
-		std::printf("Usage: ./sharded block_size\n");
+	if (argc < 2) {
+		std::printf("Usage: ./sharded <gen_type> <block_size>?\n");
 		std::exit(-1);
 	}
 
-	block_size = atoi(argv[1]);
+	char* generator_strategy = argv[1];
+	
+	bool dyn = strcmp(generator_strategy, "s");
+	int block_size = -1;
+	
+	if (! dyn) {
+		if (argc != 3) {
+			std::printf("Usage: ./sharded <gen_type> <block_size>?\n");
+			std::exit(-1);
+		}
+		
+		block_size = atoi(argv[2]);
+	}
 	
 //	std::printf("started\n");
 	srand(1);
@@ -170,7 +183,8 @@ int main(int argc, char** argv) {
     
 
     if (world_rank == 1) {
-    	generator(search_comm);
+    	if (dyn) generator(search_comm);
+    	else single_block_size_generator(search_comm, block_size);
     } else if (world_rank == 0) {
     	aggregator(world_size - 2);
     } else {
@@ -238,13 +252,14 @@ void fill_offset_time(double* offset_time, int length) {
 	
 	for (int i = 0; i < length; i++) {
 		offset_time[i] = offset;
-		offset += constant_interval(0);
+		offset += constant_interval(0.001);
 	}
 }
 
 
 void bench_generator(MPI_Comm search_comm, float* xq) {
 	double time_before_send[nq];
+	double avg_time[nq];
 	
 	for (int block_size = 10; block_size < nq; block_size += 10) {
 		time_before_send[block_size] = elapsed();
@@ -253,18 +268,25 @@ void bench_generator(MPI_Comm search_comm, float* xq) {
 		MPI_Bcast(xq, block_size * d, MPI_FLOAT, 0, search_comm);
 		
 		//receive ending confirmation
-		int whatever;
-		MPI_Recv(&whatever, 1, MPI_INT, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		double end_time[block_size];
+		MPI_Recv(end_time, block_size, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		
-		std::printf("%d done\n", block_size);
+		double sum = 0;
+		for (int i = 0; i < block_size; i++) {
+//			std::printf("diff %d: %lf\n", i, end_time[i] - time_before_send[block_size]);
+			sum += end_time[i] - time_before_send[block_size];
+		}
+		
+		avg_time[block_size] = sum / block_size;
+//		std::printf("%d done, avg=%lf\n", block_size, avg_time[block_size]);
 	}
 	
-	std::printf("generator after for\n");
+//	std::printf("generator after for\n");
 	
 	double end_time[nq];
 	MPI_Recv(end_time, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 	
-	std::printf("generator received end_time\n");
+//	std::printf("generator received end_time\n");
 	
 	
 	/*
@@ -275,24 +297,115 @@ void bench_generator(MPI_Comm search_comm, float* xq) {
 	double time_aggr_in[nq];
 	double time_aggr_free[nq];
 		
-	std::printf("Receiving aggregator time\n");
+//	std::printf("Receiving aggregator time\n");
 	MPI_Recv(time_aggr_in, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 	MPI_Recv(time_aggr_free, nq, MPI_DOUBLE, AGGREGATOR, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 	
-	std::printf("generator finished\n");
+//	std::printf("generator finished\n");
+	
 	
 	for (int block_size = 10; block_size < nq; block_size += 10) {
 		std::printf("%d %lf %lf %lf\n",
 				block_size,
 				time_aggr_in[block_size] - time_before_send[block_size],
 				time_aggr_free[block_size] - time_before_send[block_size],
-				time_aggr_free[block_size] - time_aggr_in[block_size]);
+				avg_time[block_size]);
 	}
+}
+
+struct TimingEntry {
+	double aggr_in;
+	double aggr_free;
+	double avg_time;
+};
+
+TimingEntry* load_profiling_data(char* filename, int& qty) {
+	std::ifstream in_file(filename);
+
+	in_file >> qty;
+	
+	TimingEntry* profile_data = new TimingEntry[nq];
+	
+	for (int i = 0; i < qty; i++) {
+		int block_size;
+		in_file >>  block_size;
+		in_file >> profile_data[block_size].aggr_in;
+		in_file >> profile_data[block_size].aggr_free;
+		in_file >> profile_data[block_size].avg_time;
+	}
+	
+	return profile_data;
+}
+
+inline double predict_avg_time(int block_size, TimingEntry* profile_data, double twt) {
+	return twt / block_size + profile_data[block_size].avg_time;
+}
+
+void single_block_size_generator(MPI_Comm search_comm, int block_size) {
+	float* xq = load_queries();
+
+	//	mock_generator(search_comm);
+	double offset_time[nq];
+	double end_time[nq];
+
+	fill_offset_time(offset_time, nq);
+
+	float query_buffer[10000 * d];
+
+	int queries_in_buffer = 0;
+
+	double start = elapsed();
+
+	while (true) {
+		int id = next_query(offset_time, nq, start);
+
+		if (id == -1) {
+			continue;
+		}
+			
+		if (id == -2) {
+			if (queries_in_buffer >= 1) {
+				MPI_Bcast(&queries_in_buffer, 1, MPI_INT, 0, search_comm);
+				MPI_Bcast(query_buffer, queries_in_buffer * d, MPI_FLOAT, 0,
+						search_comm);
+			}
+
+			break;
+		}
+
+		// do what you must
+		memcpy(query_buffer + queries_in_buffer * d, xq + id * d, d * sizeof(float));
+		queries_in_buffer++;
+
+		if (queries_in_buffer != block_size) continue;
+
+//		std::printf("sent %d\n", queries_in_buffer);
+
+		MPI_Bcast(&queries_in_buffer, 1, MPI_INT, 0, search_comm);
+		MPI_Bcast(query_buffer, queries_in_buffer * d, MPI_FLOAT, 0, search_comm);
+		queries_in_buffer = 0;
+	}
+
+	MPI_Recv(end_time, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
+			MPI_STATUS_IGNORE);
+
+	double total = 0;
+
+	for (int i = 0; i < nq; i++) {
+		total += end_time[i] - (start + offset_time[i]);
+//		std::printf("query %d took %lf\n", i, end_time[i] - (start + offset_time[i]));
+	}
+
+	std::printf("%lf %lf\n", total / nq,
+			end_time[nq - 1] - start - offset_time[0]);
 }
 
 void generator(MPI_Comm search_comm) {
 	float* xq = load_queries();
 	
+	int qty;
+	TimingEntry* profile_data = load_profiling_data("profile.txt", qty);
+		
 	#ifdef BENCHMARK
 		bench_generator(search_comm, xq);
 		return;
@@ -304,28 +417,92 @@ void generator(MPI_Comm search_comm) {
 	
 	fill_offset_time(offset_time, nq);
 	
-	float query_buffer[block_size * d];
+	float query_buffer[10000 * d];
+	
 	int queries_in_buffer = 0;
 	
+	double last_sent = 0;
+	int last_block_size = 10;
+	
+	TimingEntry* current_entry;
+	TimingEntry* last_sent_entry = profile_data;
+	
+	double twt = 0;
+	double qt = 0;
+	
 	double start = elapsed();
+	double last_query = start;
 	
 	while (true) {
 		int id = next_query(offset_time, nq, start);
 		
-		if (id == -1) continue;
-		if (id == -2) break;
+		if (id == -1) {
+//			std::printf("no query\n");
+			continue;
+		}
+		if (id == -2) {
+			if (queries_in_buffer >= 1) {
+				MPI_Bcast(&queries_in_buffer, 1, MPI_INT, 0, search_comm);
+				MPI_Bcast(query_buffer, queries_in_buffer * d, MPI_FLOAT, 0, search_comm);
+			}
+			
+			break;
+		}
 		
-//		std::printf("query %d\n", id);
+//		double query_accepted_time = offset_time[id] + start;
+		double query_accepted_time = elapsed();
+		
+//		std::printf("%d: %lf\n", id, query_accepted_time);
 		
 		// do what you must
 		memcpy(query_buffer + queries_in_buffer * d, xq + id * d, d * sizeof(float));
+		
+		qt = query_accepted_time - last_query;
+		
+		double last_query_cpy = last_query;
+		
+		last_query = query_accepted_time; 
+		
 		queries_in_buffer++;
 		
-		if (queries_in_buffer == block_size) {
-			MPI_Bcast(&block_size, 1, MPI_INT, 0, search_comm);
-			MPI_Bcast(query_buffer, block_size * d, MPI_FLOAT, 0, search_comm);
-			queries_in_buffer = 0;
+		//we only take action every 10 queries received
+		if (queries_in_buffer % 10 != 0) continue;
+		
+		//now we verify if we can send it without having a collision in the pipeline
+		current_entry = profile_data + queries_in_buffer;
+		
+		double now = elapsed();
+		
+		if (now + current_entry->aggr_in < last_sent + last_sent_entry->aggr_free) continue;
+
+		twt += queries_in_buffer * (now - last_query_cpy);  
+		
+		
+		double send_rt = predict_avg_time(queries_in_buffer, profile_data, twt);
+		double expected_next_twt = twt + qt * (100 * queries_in_buffer + 50*99);
+		double wait_rt = predict_avg_time(queries_in_buffer + 100, profile_data, expected_next_twt);
+		
+		
+		
+		if (wait_rt <= send_rt) {
+//			std::printf("skipped %d, wait=%lf, send=%lf\n", queries_in_buffer, wait_rt, send_rt);
+			continue;
 		}
+		
+		std::printf("qty=%d, send_rt=%lf, wait_rt=%lf, qt=%lf, twt=%lf, next_twt=%lf\n", queries_in_buffer,
+				send_rt, 
+				wait_rt,
+				qt,
+				twt,
+				expected_next_twt);
+		
+
+		
+		MPI_Bcast(&queries_in_buffer, 1, MPI_INT, 0, search_comm);
+		MPI_Bcast(query_buffer, queries_in_buffer * d, MPI_FLOAT, 0, search_comm);
+		queries_in_buffer = 0;
+		twt = 0;
+		last_sent_entry = current_entry;
 	}
 	
 	MPI_Recv(end_time, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -335,10 +512,8 @@ void generator(MPI_Comm search_comm) {
 	for (int i = 0; i < nq; i++) {
 		total += end_time[i] - (start + offset_time[i]);
 	}
-	
-	std::printf("Average response time: %lf\n", total / nq);
-	std::printf("Total time: %lf\n", end_time[nq - 1] - start);
-//	std::printf("%lf %lf\n", total / nq, end_time[nq - 1] - start);
+
+	std::printf("%lf %lf\n", total / nq, end_time[nq - 1] - start - offset_time[0]);
 }
 
 void mock_search(MPI_Comm search_comm) {
@@ -493,9 +668,6 @@ void aggregator(int nshards) {
 	
 	while (qn != nq) {
 //		std::printf("qn=%d nq=%d\n", qn, nq);
-		#ifdef BENCHMARK
-			qn = 10;
-		#endif
 		
 		MPI_Status status;
 		int qty;
@@ -572,8 +744,11 @@ void aggregator(int nshards) {
 
 		#ifdef BENCHMARK
 			time_aggr_free[qty] = elapsed();
-			int whatever;
-			MPI_Send(&whatever, 1, MPI_INT, GENERATOR, 0, MPI_COMM_WORLD);
+			MPI_Send(end_time, qty, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
+			
+			if (qty + 10 == nq) break;
+			
+			qn = 0;
 		#endif
 	}
 
