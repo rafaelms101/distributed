@@ -47,10 +47,10 @@ int m = 8;
 int nprobe = 4;
 //int block_size = 1;
 
-void generator(MPI_Comm search_comm);
-void single_block_size_generator(MPI_Comm search_comm, int block_size);
+void generator(int nshards);
+void single_block_size_generator(int nshards, int block_size);
 void aggregator(int nshards);
-void search(MPI_Comm search_comm, int nshards);
+void search(int shard, int nshards);
 
 enum MESSAGE_TAGS {
 	
@@ -164,11 +164,11 @@ int main() {
     
 
     if (world_rank == 1) {
-    	generator(search_comm);
+    	generator(world_size - 2);
     } else if (world_rank == 0) {
     	aggregator(world_size - 2);
     } else {
-    	search(search_comm, world_size - 2);
+    	search(world_rank - 2, world_size - 2);
     }
     
     // Finalize the MPI environment.
@@ -237,61 +237,61 @@ void fill_offset_time(double* offset_time, int length) {
 }
 
 
-void bench_generator(MPI_Comm search_comm, float* xq) {
-	double time_before_send[nq];
-	double avg_time[nq];
-	
-	for (int block_size = 10; block_size < nq; block_size += 10) {
-		time_before_send[block_size] = elapsed();
-		
-		MPI_Bcast(&block_size, 1, MPI_INT, 0, search_comm);
-		MPI_Bcast(xq, block_size * d, MPI_FLOAT, 0, search_comm);
-		
-		//receive ending confirmation
-		double end_time[block_size];
-		MPI_Recv(end_time, block_size, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		
-		double sum = 0;
-		for (int i = 0; i < block_size; i++) {
-//			std::printf("diff %d: %lf\n", i, end_time[i] - time_before_send[block_size]);
-			sum += end_time[i] - time_before_send[block_size];
-		}
-		
-		avg_time[block_size] = sum / block_size;
-//		std::printf("%d done, avg=%lf\n", block_size, avg_time[block_size]);
-	}
-	
-//	std::printf("generator after for\n");
-	
-	double end_time[nq];
-	MPI_Recv(end_time, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	
-//	std::printf("generator received end_time\n");
-	
-	
-	/*
-	 * Getting & Processing time tables
-	 */
-	
-	//receiving timetables for aggregation
-	double time_aggr_in[nq];
-	double time_aggr_free[nq];
-		
-//	std::printf("Receiving aggregator time\n");
-	MPI_Recv(time_aggr_in, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	MPI_Recv(time_aggr_free, nq, MPI_DOUBLE, AGGREGATOR, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	
-//	std::printf("generator finished\n");
-	
-	
-	for (int block_size = 10; block_size < nq; block_size += 10) {
-		std::printf("%d %lf %lf %lf\n",
-				block_size,
-				time_aggr_in[block_size] - time_before_send[block_size],
-				time_aggr_free[block_size] - time_before_send[block_size],
-				avg_time[block_size]);
-	}
-}
+//void bench_generator(MPI_Comm search_comm, float* xq) {
+//	double time_before_send[nq];
+//	double avg_time[nq];
+//	
+//	for (int block_size = 10; block_size < nq; block_size += 10) {
+//		time_before_send[block_size] = elapsed();
+//		
+//		MPI_Bcast(&block_size, 1, MPI_INT, 0, search_comm);
+//		MPI_Bcast(xq, block_size * d, MPI_FLOAT, 0, search_comm);
+//		
+//		//receive ending confirmation
+//		double end_time[block_size];
+//		MPI_Recv(end_time, block_size, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+//		
+//		double sum = 0;
+//		for (int i = 0; i < block_size; i++) {
+////			std::printf("diff %d: %lf\n", i, end_time[i] - time_before_send[block_size]);
+//			sum += end_time[i] - time_before_send[block_size];
+//		}
+//		
+//		avg_time[block_size] = sum / block_size;
+////		std::printf("%d done, avg=%lf\n", block_size, avg_time[block_size]);
+//	}
+//	
+////	std::printf("generator after for\n");
+//	
+//	double end_time[nq];
+//	MPI_Recv(end_time, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+//	
+////	std::printf("generator received end_time\n");
+//	
+//	
+//	/*
+//	 * Getting & Processing time tables
+//	 */
+//	
+//	//receiving timetables for aggregation
+//	double time_aggr_in[nq];
+//	double time_aggr_free[nq];
+//		
+////	std::printf("Receiving aggregator time\n");
+//	MPI_Recv(time_aggr_in, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+//	MPI_Recv(time_aggr_free, nq, MPI_DOUBLE, AGGREGATOR, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+//	
+////	std::printf("generator finished\n");
+//	
+//	
+//	for (int block_size = 10; block_size < nq; block_size += 10) {
+//		std::printf("%d %lf %lf %lf\n",
+//				block_size,
+//				time_aggr_in[block_size] - time_before_send[block_size],
+//				time_aggr_free[block_size] - time_before_send[block_size],
+//				avg_time[block_size]);
+//	}
+//}
 //
 //
 //TimingEntry* load_profiling_data(char* filename, int& qty) {
@@ -316,7 +316,7 @@ void bench_generator(MPI_Comm search_comm, float* xq) {
 //	return twt / block_size + profile_data[block_size].avg_time;
 //}
 
-void single_block_size_generator(MPI_Comm search_comm, int block_size) {
+void single_block_size_generator(int nshards, int block_size) {
 	float* xq = load_queries();
 
 	double offset_time[nq];
@@ -339,15 +339,17 @@ void single_block_size_generator(MPI_Comm search_comm, int block_size) {
 			
 		if (id == -2) {
 			if (queries_in_buffer >= 1) {
-				MPI_Bcast(&queries_in_buffer, 1, MPI_INT, 0, search_comm);
-				MPI_Bcast(query_buffer, queries_in_buffer * d, MPI_FLOAT, 0,
-						search_comm);
+				for (int node = 0; node < nshards; node++) {
+					MPI_Send(&queries_in_buffer, 1, MPI_INT, node + 2, 0,
+							MPI_COMM_WORLD);
+					MPI_Send(query_buffer, queries_in_buffer * d, MPI_FLOAT,
+							node + 2, 0, MPI_COMM_WORLD);
+				}
 			}
 
 			break;
 		}
 
-		// do what you must
 		memcpy(query_buffer + queries_in_buffer * d, xq + id * d, d * sizeof(float));
 		queries_in_buffer++;
 
@@ -355,8 +357,11 @@ void single_block_size_generator(MPI_Comm search_comm, int block_size) {
 
 		std::printf("sent %d\n", id);
 
-		MPI_Bcast(&queries_in_buffer, 1, MPI_INT, 0, search_comm);
-		MPI_Bcast(query_buffer, queries_in_buffer * d, MPI_FLOAT, 0, search_comm);
+		for (int node = 0; node < nshards; node++) {
+			MPI_Send(&queries_in_buffer, 1, MPI_INT, node + 2, 0, MPI_COMM_WORLD);
+			MPI_Send(query_buffer, queries_in_buffer * d, MPI_FLOAT, node + 2, 0, MPI_COMM_WORLD);
+		}
+		
 		queries_in_buffer = 0;
 	}
 
@@ -374,8 +379,8 @@ void single_block_size_generator(MPI_Comm search_comm, int block_size) {
 			end_time[nq - 1] - start - offset_time[0]);
 }
 
-void generator(MPI_Comm search_comm) {
-	single_block_size_generator(search_comm, 20);
+void generator(int nshards) {
+	single_block_size_generator(nshards, 20);
 }
 
 void mock_search(MPI_Comm search_comm) {
@@ -418,15 +423,11 @@ void* gpu_search(void* arg) {
 	pthread_exit(NULL);
 }
 
-void search(MPI_Comm search_comm, int nshards) {
-	float cpu_slice = 1;
+void search(int shard, int nshards) {
+	float cpu_slice = 0;
 	
 	faiss::gpu::StandardGpuResources res;
 //	res.setTempMemory(1536 * 1024 * 1024);
-
-	int search_rank;
-	MPI_Comm_rank(search_comm, &search_rank);
-	int shard = search_rank - 1;
 
 	char index_path[500];
 	sprintf(index_path, "index/index_%d_%d_%d", nb, ncentroids, m);
@@ -438,13 +439,13 @@ void search(MPI_Comm search_comm, int nshards) {
 
 	int qn = 0;
 
+	float query_buffer[400 * d];
+	
 	while (qn != nq) {
 		int qty;
-		MPI_Bcast(&qty, 1, MPI_INT, 0, search_comm);
+		MPI_Recv(&qty, 1, MPI_INT, GENERATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		MPI_Recv(query_buffer, qty * d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-		float query_buffer[qty * d];
-		MPI_Bcast(query_buffer, qty * d, MPI_FLOAT, 0, search_comm);
-		
 		faiss::Index::idx_t* I = new faiss::Index::idx_t[k * qty];
 		float* D = new float[k * qty];
 		
