@@ -27,6 +27,8 @@
 
 #include <pthread.h>
 
+#include <unordered_map>
+
 
 //#define BENCHMARK
 #define AGGREGATOR 0
@@ -225,7 +227,7 @@ float* load_queries() {
 
 
 double next_query_interval() {
-	return constant_interval(0.0004);
+	return constant_interval(0.0003);
 }
 
 int next_query() {
@@ -244,15 +246,6 @@ int next_query() {
 	
 	return rand() % 10000; 
 }
-
-//void fill_offset_time(double* offset_time, int length) {
-//	double offset = 0;
-//	
-//	for (int i = 0; i < length; i++) {
-//		offset_time[i] = offset;
-//		offset += constant_interval(0.0004);
-//	}
-//}
 
 inline void send_queries(int nshards, float* query_buffer, int queries_in_buffer) {
 	for (int node = 0; node < nshards; node++) {
@@ -402,12 +395,23 @@ inline void receive_queries(float* query_buffer, int* nqueries) {
 
 }
 
+struct ExecutionProfile {
+	double gpu_slice;
+	double time;
+	bool optimal;
+};
+
 void search(int shard, int nshards) {
+	double gpu_slice_granularity = 0.1;
+	
+	ExecutionProfile execution_time[100000];
+	for (int i = 0; i < 100000; i++) {
+		execution_time[i].optimal = false;
+		execution_time[i].gpu_slice = 1 + gpu_slice_granularity;
+		execution_time[i].time = -1;
+	}
+	
 	int processed = 0;
-	
-	double cpu_slice = 1;
-	assert(cpu_slice <= 1 && cpu_slice >= 0);
-	
 	
 	faiss::gpu::StandardGpuResources res;
 //	res.setTempMemory(1536 * 1024 * 1024);
@@ -425,12 +429,12 @@ void search(int shard, int nshards) {
 	float query_buffer[10000 * d];
 	int nqueries = 0;
 	
-	int target_block_size = 1000;
+	int target_block_size = 0;
 	
 	while (qn != test_length) {	
-		static int last_target = target_block_size;
-		if (last_target != target_block_size) std::printf("target block size: %d\n", target_block_size);
-		last_target = target_block_size;
+//		static int last_target = target_block_size;
+//		if (last_target != target_block_size) std::printf("target block size: %d\n", target_block_size);
+//		last_target = target_block_size;
 		
 		int available;
 		MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &available, MPI_STATUS_IGNORE);
@@ -442,10 +446,11 @@ void search(int shard, int nshards) {
 		
 //		std::printf("Received available queries\n");
 		
-		if (nqueries != 20) std::printf("waiting[%d]: %d\n", shard, nqueries);
-
+//		if (nqueries != 20) std::printf("waiting[%d]: %d\n", shard, nqueries);
+		
 		if (nqueries > target_block_size) {
 			target_block_size = nqueries;
+			//need to determine the gpu slice
 		}
 		else {
 			target_block_size = std::max(20, static_cast<int>(0.5 * (target_block_size + nqueries)));
@@ -457,19 +462,27 @@ void search(int shard, int nshards) {
 			receive_queries(query_buffer, &nqueries);
 		}
 		
+		double gpu_slice = -1;
 		
-//		std::printf("processed[%d]: %d\n", shard, nqueries);
+		if (execution_time[nqueries].optimal) gpu_slice = execution_time[nqueries].gpu_slice;
+		else gpu_slice = execution_time[nqueries].gpu_slice - gpu_slice_granularity;
 		
+//		std::printf("gpu slice is %lf\n", gpu_slice);
+
 		//now we proccess our query buffer
 		faiss::Index::idx_t* I = new faiss::Index::idx_t[k * nqueries];
 		float* D = new float[k * nqueries];
 		
-		int nq_cpu = nqueries * cpu_slice;
-		int nq_gpu = nqueries - nq_cpu;
+		int nq_gpu = nqueries * gpu_slice;
+		int nq_cpu = nqueries - nq_gpu;
+		
+//		std::printf("nq_gpu=%d, nq_cpu=%d\n", nq_gpu, nq_cpu);
 		
 		pthread_t thread;
 
 		SearchArg args;
+		
+		double start = elapsed();
 		
 		if (nq_gpu > 0) {
 			args.nq = nq_gpu;
@@ -489,14 +502,23 @@ void search(int shard, int nshards) {
 			pthread_join(thread, NULL);
 		}	
 		
+		double et = elapsed() - start;
+		
+//		std::printf("et[%d]=%lf\n", nqueries, et);
 		
 		MPI_Send(&nqueries, 1, MPI_INT, AGGREGATOR, 0, MPI_COMM_WORLD);
 		MPI_Send(I, k * nqueries, MPI_LONG, AGGREGATOR, 1, MPI_COMM_WORLD);
 		MPI_Send(D, k * nqueries, MPI_FLOAT, AGGREGATOR, 2, MPI_COMM_WORLD);
-		
+
+		if (execution_time[nqueries].time == -1 || et < execution_time[nqueries].time) {
+			execution_time[nqueries].time = et;
+			execution_time[nqueries].gpu_slice = gpu_slice;
+		} else {
+			execution_time[nqueries].optimal = true;
+		}
 		
 //	
-		std::printf("query #%d\n", qn);
+//		std::printf("query #%d\n", qn);
 //		std::printf("execution time[%d]=%lf\n", nqueries, execution_time[nqueries]);
 //		std::printf("query time=%lf, expected queue=%lf\n", query_time, execution_time[nqueries] / query_time);
 				
@@ -626,6 +648,9 @@ void aggregator(int nshards) {
 		}
 		
 		
+//		double start = elapsed();
+//		qty = 0;
+		
 		while (true) {
 			bool hasEmpty = false;
 
@@ -641,7 +666,11 @@ void aggregator(int nshards) {
 			aggregate_query(queue, nshards);
 			end_time[qn] = elapsed();
 			qn++;
+			qty++;
 		}
+		
+//		double end = elapsed();
+//		std::printf("aggregate[%d]=%lf\n", qty, end - start);
 	}
 
 //	std::printf("aggregator sending\n");
