@@ -34,10 +34,13 @@
 
 char src_path[] = "/home/rafael/mestrado/bigann/";
 
-int nq = 10000;
-
 faiss::Index* gpu_index;
 
+#define NQ 10000
+
+int test_length = 80000;
+
+double exp_length = 5;
 
 int d = 128;
 int k = 10;
@@ -214,32 +217,42 @@ float* load_queries() {
 	//loading queries
 	size_t fz;
 	unsigned char* queries = bvecs_read(query_path, &fz);
-	float* xq = to_float_array(queries, nq, d);
+	float* xq = to_float_array(queries, NQ, d);
 	munmap(queries, fz);
 	
 	return xq;
 }
 
-int next_query(double* offset_time, int size, double start) {
-	static int qn = 0;
-	
-	if (qn == size) return -2;
+
+double next_query_interval() {
+	return constant_interval(0.0004);
+}
+
+int next_query() {
+	static int qty = 0;
+	static double query_time = elapsed();
 	
 	double now = elapsed();
 	
-	if (now < offset_time[qn] + start) return -1;
+	if (qty >= test_length) return -2;
 	
-	return qn++; 
+	if (now < query_time) return -1;
+	
+	query_time = now + next_query_interval();
+	
+	qty++;
+	
+	return rand() % 10000; 
 }
 
-void fill_offset_time(double* offset_time, int length) {
-	double offset = 0;
-	
-	for (int i = 0; i < length; i++) {
-		offset_time[i] = offset;
-		offset += constant_interval(0.0004);
-	}
-}
+//void fill_offset_time(double* offset_time, int length) {
+//	double offset = 0;
+//	
+//	for (int i = 0; i < length; i++) {
+//		offset_time[i] = offset;
+//		offset += constant_interval(0.0004);
+//	}
+//}
 
 inline void send_queries(int nshards, float* query_buffer, int queries_in_buffer) {
 	for (int node = 0; node < nshards; node++) {
@@ -262,21 +275,24 @@ inline void send_queries(int nshards, float* query_buffer, int queries_in_buffer
 void single_block_size_generator(int nshards, int block_size) {
 	float* xq = load_queries();
 
-	double offset_time[nq];
-	double end_time[nq];
+//	double offset_time[nq];
+	double end_time[test_length];
+	double start_time[test_length];
 
-	fill_offset_time(offset_time, nq);
+//	fill_offset_time(offset_time, nq);
 
-	float* query_buffer = new float[nq * d];
+	float* query_buffer = new float[test_length * d];
 	float* to_be_deleted = query_buffer;
 
 	int queries_in_buffer = 0;
+//
+//	double start = elapsed();
 
-	double start = elapsed();
-
+	int qn = 0;
+	
 	while (true) {
-		int id = next_query(offset_time, nq, start);
-
+		int id = next_query();
+		
 		if (id == -1) {
 			continue;
 		}
@@ -289,6 +305,7 @@ void single_block_size_generator(int nshards, int block_size) {
 			break;
 		}
 
+		start_time[qn++] = elapsed();
 		memcpy(query_buffer + queries_in_buffer * d, xq + id * d, d * sizeof(float));
 		queries_in_buffer++;
 
@@ -303,18 +320,18 @@ void single_block_size_generator(int nshards, int block_size) {
 		queries_in_buffer = 0;
 	}
 
-	MPI_Recv(end_time, nq, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
+	MPI_Recv(end_time, test_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
 			MPI_STATUS_IGNORE);
 
 	double total = 0;
 
-	for (int i = 0; i < nq; i++) {
-		total += end_time[i] - (start + offset_time[i]);
+	for (int i = 0; i < test_length; i++) {
+		total += end_time[i] - start_time[i];
 //		std::printf("query %d took %lf\n", i, end_time[i] - (start + offset_time[i]));
 	}
 
-	std::printf("%lf %lf\n", total / nq,
-			end_time[nq - 1] - start - offset_time[0]);
+	std::printf("%lf %lf\n", total / test_length,
+			end_time[test_length - 1] - start_time[0]);
 	
 	delete [] to_be_deleted;
 }
@@ -408,9 +425,9 @@ void search(int shard, int nshards) {
 	float query_buffer[10000 * d];
 	int nqueries = 0;
 	
-	int target_block_size = 40;
+	int target_block_size = 1000;
 	
-	while (qn != nq) {	
+	while (qn != test_length) {	
 		static int last_target = target_block_size;
 		if (last_target != target_block_size) std::printf("target block size: %d\n", target_block_size);
 		last_target = target_block_size;
@@ -425,7 +442,7 @@ void search(int shard, int nshards) {
 		
 //		std::printf("Received available queries\n");
 		
-//		if (nqueries != 20) std::printf("waiting[%d]: %d\n", shard, nqueries);
+		if (nqueries != 20) std::printf("waiting[%d]: %d\n", shard, nqueries);
 
 		if (nqueries > target_block_size) {
 			target_block_size = nqueries;
@@ -434,7 +451,7 @@ void search(int shard, int nshards) {
 			target_block_size = std::max(20, static_cast<int>(0.5 * (target_block_size + nqueries)));
 		}
 
-		target_block_size = std::min(target_block_size, nq - processed);
+		target_block_size = std::min(target_block_size, test_length - processed);
 		
 		while (nqueries < target_block_size) {
 			receive_queries(query_buffer, &nqueries);
@@ -479,7 +496,7 @@ void search(int shard, int nshards) {
 		
 		
 //	
-		std::printf("processed %d, %lf\n", nqueries, elapsed());
+		std::printf("query #%d\n", qn);
 //		std::printf("execution time[%d]=%lf\n", nqueries, execution_time[nqueries]);
 //		std::printf("query time=%lf, expected queue=%lf\n", query_time, execution_time[nqueries] / query_time);
 				
@@ -564,7 +581,7 @@ void aggregate_query(std::queue<PartialResult>* queue, int nshards) {
 }
 
 void aggregator(int nshards) {
-	double end_time[nq];
+	double end_time[test_length];
 
 //	 load ground-truth and convert int to long
 	char idx_path[1000];
@@ -575,9 +592,9 @@ void aggregator(int nshards) {
 	int whatever;
 	int *gt_int = ivecs_read(idx_path, &k, &whatever);
 
-	faiss::Index::idx_t* gt = new faiss::Index::idx_t[k * nq];
+	faiss::Index::idx_t* gt = new faiss::Index::idx_t[k * NQ];
 
-	for (int i = 0; i < k * nq; i++) {
+	for (int i = 0; i < k * NQ; i++) {
 		gt[i] = gt_int[i];
 	}
 
@@ -589,7 +606,7 @@ void aggregator(int nshards) {
 //	int n_1 = 0, n_10 = 0, n_100 = 0;
 	int qn = 0;
 	
-	while (qn != nq) {
+	while (qn != test_length) {
 //		std::printf("qn=%d nq=%d\n", qn, nq);
 		
 		MPI_Status status;
@@ -629,6 +646,6 @@ void aggregator(int nshards) {
 
 //	std::printf("aggregator sending\n");
 	
-	MPI_Send(end_time, nq, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
+	MPI_Send(end_time, test_length, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
 //	std::printf("aggregator finished\n");
 }
