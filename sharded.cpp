@@ -19,15 +19,16 @@
 #include "gpu/GpuIndexIVFPQ.h"
 
 #include "readSplittedIndex.h"
+#include "CircularBuffer.h"
 
 #include <fstream>
 #include <utility>
 #include <tuple>
 #include <unistd.h>
 
-#include <pthread.h>
-
 #include <unordered_map>
+
+#include <thread>   
 
 #define DEBUG
 
@@ -58,9 +59,8 @@ int ncentroids = 256;
 int m = 8;
 int nprobe = 4;
 
-int block_granularity = 20;
+int block_size = 20;
 
-int block_size = 0;
 double gpu_slice = 1;
 double query_rate = 0;
 
@@ -277,11 +277,11 @@ int next_query() {
 	
 	qty++;
 	
-	if (qty % 10000 == 0 || qty % 1000 == 0 && qty <= 10000) {
+	if (qty % 10000 == 0 || (qty % 1000 == 0 && qty <= 10000)) {
 		deb("Sent %d/%d queries", qty, test_length);
 	}
 	
-	return rand() % 10000; 
+	return (qty - 1) % 10000; 
 }
 
 void send_queries(int nshards, float* query_buffer, int queries_in_buffer) {
@@ -370,7 +370,7 @@ void single_block_size_generator(int nshards, int block_size) {
 }
 
 void generator(int nshards) {
-	single_block_size_generator(nshards, block_granularity);
+	single_block_size_generator(nshards, block_size);
 }
 
 void mock_search(MPI_Comm search_comm) {
@@ -397,18 +397,8 @@ void mock_search(MPI_Comm search_comm) {
 	}
 }
 
-struct SearchArg {
-	int nq;
-	float* queries;
-	float* D;
-	faiss::Index::idx_t* I;
-};
-
-void* gpu_search(void* arg) {
-	SearchArg* a = (SearchArg*) arg;
-	
-	gpu_index->search(a->nq, a->queries, k, a->D, a->I);
-	pthread_exit(NULL);
+void gpu_search(int nq, float* queries, float* D, faiss::Index::idx_t* I) {
+	if (nq > 0) gpu_index->search(nq, queries, k, D, I);
 }
 
 inline void receive_queries(float* query_buffer, int* nqueries) {
@@ -435,11 +425,19 @@ struct ExecutionProfile {
 	bool optimal;
 };
 
+void query_receiver() {
+	
+	
+//	int queries_received = 0;
+//	
+//	while (queries_received <= test_length) {
+//		MPI_Recv(query_buffer + *nqueries * d, qty * d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+//		
+//	}
+}
+
 void search(int shard, int nshards, bool dynamic) {
 	const int max_block_size = dynamic ? 100000 : block_size;
-	
-	assert(dynamic || block_size % block_granularity == 0);
-	
 //	const double gpu_slice_granularity = 0.05;
 	
 //	ExecutionProfile execution_time[max_block_size];
@@ -473,21 +471,18 @@ void search(int shard, int nshards, bool dynamic) {
 	
 	deb("Search node is ready");
 	
+	std::thread receiver{query_receiver};
+	
 	while (qn != test_length) {	
 		int available;
 		MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &available, MPI_STATUS_IGNORE);
-		
-		double start = elapsed();
 		
 		while (available && nqueries < max_block_size) {
 			receive_queries(query_buffer, &nqueries);
 			MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &available, MPI_STATUS_IGNORE);
 		}
-		
-		double end = elapsed();
+
 //		deb("%lf time to receive %d queries\n", end - start, nqueries);
-		
-//		std::printf("waiting=%d\n", nqueries);
 		
 		if (dynamic) {
 			if (nqueries > target_block_size) {
@@ -498,8 +493,7 @@ void search(int shard, int nshards, bool dynamic) {
 			}
 		}
 
-		target_block_size = std::max(block_granularity, target_block_size);
-		target_block_size = std::min(target_block_size, test_length - processed);
+		target_block_size = 20;
 		
 		while (nqueries < target_block_size) {
 			receive_queries(query_buffer, &nqueries);
@@ -520,31 +514,25 @@ void search(int shard, int nshards, bool dynamic) {
 		int nq_gpu = nqueries * gpu_slice;
 		int nq_cpu = nqueries - nq_gpu;
 		
-		pthread_t thread;
+//		start = elapsed();
+		
+//		if (nq_gpu > 0) {
+//			args.nq = nq_gpu;
+//			args.queries = query_buffer + nq_cpu * d;
+//			args.D = D + k * nq_cpu;
+//			args.I = I + k * nq_cpu;
+//			pthread_create(&gpu_thread, NULL, gpu_search, &args);
+//		}
 
-		SearchArg args;
-		
-		start = elapsed();
-		
-		if (nq_gpu > 0) {
-			args.nq = nq_gpu;
-			args.queries = query_buffer + nq_cpu * d;
-			args.D = D + k * nq_cpu;
-			args.I = I + k * nq_cpu;
-			pthread_create(&thread, NULL, gpu_search, &args);
-		}
-		
+		std::thread gpu_thread{gpu_search, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu};
 		
 		if (nq_cpu > 0) {
 			cpu_index->search(nq_cpu, query_buffer, k, D, I);
 		}
 		
+		gpu_thread.join();
 		
-		if (nq_gpu > 0) {
-			pthread_join(thread, NULL);
-		}	
-		
-		end = elapsed();
+//		end = elapsed();
 		
 //		deb("et[%d] = %lf\n", nqueries, end - start);
 		
@@ -576,6 +564,8 @@ void search(int shard, int nshards, bool dynamic) {
 			target += 10000;
 		}
 	}
+	
+	receiver.join();
 	
 	delete [] query_buffer;
 	delete[] I;
@@ -632,7 +622,7 @@ void mock_aggregator() {
 	}
 }
 
-void aggregate_query(std::queue<PartialResult>* queue, int nshards) {
+void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss::Index::idx_t* ids) {
 	std::vector<PartialResult> results(nshards);
 	
 	for (int shard = 0; shard < nshards; shard++) {
@@ -640,7 +630,6 @@ void aggregate_query(std::queue<PartialResult>* queue, int nshards) {
 		queue[shard].pop();
 	}
 				
-	faiss::Index::idx_t ids[k];
 	merge_results(results, ids, nshards);
 	
 	for (int shard = 0; shard < nshards; shard++) {
@@ -662,12 +651,16 @@ void aggregator(int nshards) {
 	sprintf(idx_path, "%s/idx_%dM.ivecs", gt_path, nb / 1000000);
 
 	int whatever;
-	int *gt_int = ivecs_read(idx_path, &k, &whatever);
-
+	int db_k;
+	int *gt_int = ivecs_read(idx_path, &db_k, &whatever);
+	
 	faiss::Index::idx_t* gt = new faiss::Index::idx_t[k * NQ];
+	faiss::Index::idx_t* answers = new faiss::Index::idx_t[NQ * k];
 
-	for (int i = 0; i < k * NQ; i++) {
-		gt[i] = gt_int[i];
+	for (int i = 0; i < NQ; i++) {
+		for (int j = 0; j < k; j++) {
+			gt[i * k + j] = gt_int[i * db_k + j];
+		}
 	}
 
 	delete[] gt_int;
@@ -711,7 +704,7 @@ void aggregator(int nshards) {
 			
 			if (hasEmpty) break;
 
-			aggregate_query(queue, nshards);
+			aggregate_query(queue, nshards, answers + (qn % NQ) * k);
 			qn++;
 			
 			if (qn >= begin_timing) {
@@ -727,6 +720,28 @@ void aggregator(int nshards) {
 //		double end = elapsed();
 //		std::printf("at[%d] = %lf + %lf\n", qty, start, end - start);
 	}
+	
+	std::printf("Random sol: %ld\n", answers[123]);
+
+	int n_1 = 0, n_10 = 0, n_100 = 0;
+	for (int i = 0; i < NQ; i++) {
+		int gt_nn = gt[i * k];
+		for (int j = 0; j < k; j++) {
+			if (answers[i * k + j] == gt_nn) {
+				if (j < 1)
+					n_1++;
+				if (j < 10)
+					n_10++;
+				if (j < 100)
+					n_100++;
+			}
+		}
+	}
+
+	printf("R@1 = %.4f\n", n_1 / float(NQ));
+	printf("R@10 = %.4f\n", n_10 / float(NQ));
+	printf("R@100 = %.4f\n", n_100 / float(NQ));
+	
 	
 	MPI_Send(end_time, 10000, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
 }
