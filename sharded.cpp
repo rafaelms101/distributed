@@ -25,6 +25,7 @@
 #include <utility>
 #include <tuple>
 #include <unistd.h>
+#include <functional>
 
 #include <unordered_map>
 
@@ -45,8 +46,6 @@
 #define GENERATOR 1
 
 char src_path[] = "/home/rafael/mestrado/bigann/";
-
-faiss::Index* gpu_index;
 
 #define NQ 10000
 
@@ -222,26 +221,6 @@ double constant_interval(double val) {
 	return val;
 }
 
-double poisson_interval(double lambda) {
-	double r = static_cast<double>(rand()) / static_cast<double>(RAND_MAX);
-	return - log(r) / lambda;
-}
-
-void mock_generator(MPI_Comm search_comm) {
-	static int qb = 0;
-
-	int q = 2;
-	MPI_Bcast(&q, 1, MPI_INT, 0, search_comm);
-	
-	float query[q * d];
-	for (int i = 0; i < q * d; i++) query[i] = 0;
-	
-	qb++;
-
-	MPI_Bcast(query, q * d, MPI_FLOAT, 0, search_comm);
-	std::printf("sent:%d\n", qb);
-}
-
 float* load_queries() {
 	char query_path[500];
 	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
@@ -286,24 +265,15 @@ int next_query() {
 
 void send_queries(int nshards, float* query_buffer, int queries_in_buffer) {
 	for (int node = 0; node < nshards; node++) {
-		MPI_Send(&queries_in_buffer, 1, MPI_INT, node + 2, 0, MPI_COMM_WORLD);
-		MPI_Send(query_buffer, queries_in_buffer * d, MPI_FLOAT, node + 2, 0, MPI_COMM_WORLD);
-
-		
-//		MPI_Request request;
-//		MPI_Isend(&queries_in_buffer, 1, MPI_INT, node + 2, 0, MPI_COMM_WORLD,
-//				&request);
-//		MPI_Request_free(&request);
-//		MPI_Isend(query_buffer, queries_in_buffer * d, MPI_FLOAT, node + 2, 0,
-//				MPI_COMM_WORLD, &request);
-//		MPI_Request_free(&request);
+		assert(queries_in_buffer == block_size);
+		MPI_Ssend(query_buffer, queries_in_buffer * d, MPI_FLOAT, node + 2, 0, MPI_COMM_WORLD);
 	}
-	
-//	deb("sent %d\n", queries_in_buffer);
 }
 
 //TODO: mock nodes must be updated
 void single_block_size_generator(int nshards, int block_size) {
+	assert(test_length % block_size == 0);
+	
 	float* xq = load_queries();
 
 	double end_time[10000];
@@ -343,7 +313,7 @@ void single_block_size_generator(int nshards, int block_size) {
 		memcpy(query_buffer + queries_in_buffer * d, xq + id * d, d * sizeof(float));
 		queries_in_buffer++;
 
-		if (queries_in_buffer != block_size) continue;
+		if (queries_in_buffer < block_size) continue;
 
 		send_queries(nshards, query_buffer, queries_in_buffer);
 		
@@ -397,134 +367,90 @@ void mock_search(MPI_Comm search_comm) {
 	}
 }
 
-void gpu_search(int nq, float* queries, float* D, faiss::Index::idx_t* I) {
+void gpu_search(faiss::Index* gpu_index, int nq, float* queries, float* D, faiss::Index::idx_t* I) {
 	if (nq > 0) gpu_index->search(nq, queries, k, D, I);
 }
 
-inline void receive_queries(float* query_buffer, int* nqueries) {
-//	double send_time;
-//	MPI_Recv(&send_time, 1, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD,
-//	MPI_STATUS_IGNORE);
-
-	int qty;
-	MPI_Status status;
-//	deb("Trying to receive 20 queries");
-	MPI_Recv(&qty, 1, MPI_INT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-
-	MPI_Recv(query_buffer + *nqueries * d, qty * d, MPI_FLOAT,
-	GENERATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-//	deb("Received 20 queries");
+void query_receiver(Buffer* buffer) {
+	int queries_received = 0;
 	
-	*nqueries = *nqueries + qty;
+	assert(block_size * d * sizeof(float) == buffer->bs());
+	
+	while (queries_received < test_length) {
+		//TODO: instead of a busy loop, use events
+		//TODO: I will left it like this for the time being since buffer will always have free space available.
+		
+		assert(buffer->hasSpace());
+		
+		if (buffer->hasSpace()) {
+			float* recv_data = (float*) buffer->peekEnd();
+			
+			MPI_Status status;
+			MPI_Recv(recv_data, block_size * d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+			
+			buffer->next();
+			
+			assert(status.MPI_ERROR == MPI_SUCCESS);
+			
+			queries_received += block_size;
+			
+			if (queries_received % 10000 == 0) {
+				deb("Query Receiver received %d/%d queries", queries_received, test_length);
+			}
+		}
+	}
+	
+	deb("Finished receiving");
 }
 
-struct ExecutionProfile {
-	double gpu_slice;
-	double time;
-	bool optimal;
-};
-
-void query_receiver() {
-	
-	
-//	int queries_received = 0;
-//	
-//	while (queries_received <= test_length) {
-//		MPI_Recv(query_buffer + *nqueries * d, qty * d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-//		
-//	}
-}
-
-void search(int shard, int nshards, bool dynamic) {
-	const int max_block_size = dynamic ? 100000 : block_size;
-//	const double gpu_slice_granularity = 0.05;
-	
-//	ExecutionProfile execution_time[max_block_size];
-//	for (int i = 0; i < max_block_size; i++) {
-//		execution_time[i].optimal = false;
-//		execution_time[i].gpu_slice = 1 + gpu_slice_granularity;
-//		execution_time[i].time = -1;
-//	}
-	
-	int processed = 0;
-	
-	faiss::gpu::StandardGpuResources res;
-
+auto load_index(int shard, int nshards) {
 	char index_path[500];
 	sprintf(index_path, "index/index_%d_%d_%d", nb, ncentroids, m);
 	FILE* index_file = fopen(index_path, "r");
 	auto cpu_index = read_index(index_file, shard, nshards);
 	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = nprobe;
+	return cpu_index;
+}
 
-	gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
+void search(int shard, int nshards, bool dynamic) {
+	faiss::gpu::StandardGpuResources res;
 
-	int qn = 0;
+	auto cpu_index = load_index(shard, nshards);
+	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
 
-	float* query_buffer = new float[max_block_size * d];
-	faiss::Index::idx_t* I = new faiss::Index::idx_t[max_block_size * k];
-	float* D = new float[max_block_size * k];
-	
-	int nqueries = 0;
-	
-	int target_block_size = block_size;
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[test_length * k];
+	float* D = new float[test_length * k];
 	
 	deb("Search node is ready");
 	
-	std::thread receiver{query_receiver};
+	assert(test_length % block_size == 0);
 	
-	while (qn != test_length) {	
-		int available;
-		MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &available, MPI_STATUS_IGNORE);
+	Buffer buffer(sizeof(float) * d * block_size, test_length / block_size);
+	std::thread receiver{query_receiver, &buffer};
 		
-		while (available && nqueries < max_block_size) {
-			receive_queries(query_buffer, &nqueries);
-			MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &available, MPI_STATUS_IGNORE);
-		}
-
-//		deb("%lf time to receive %d queries\n", end - start, nqueries);
+	deb("Buffer contains %d queries", buffer.entries() * block_size);
+	
+	
+	int qn = 0;
+	while (qn < test_length) {	
+		deb("Waiting for buffer");
 		
-		if (dynamic) {
-			if (nqueries > target_block_size) {
-				target_block_size = nqueries;
-			} else {
-				target_block_size = nqueries;
-//				target_block_size = static_cast<int>(0.5 * (target_block_size + nqueries));
-			}
-		}
-
-		target_block_size = 20;
+		while (buffer.empty()) {}
 		
-		while (nqueries < target_block_size) {
-			receive_queries(query_buffer, &nqueries);
-		}
+		float* query_buffer = (float*) buffer.peekFront();
+		int nblocks = buffer.entries();
+		int nqueries = nblocks * block_size;
 		
-		assert(nqueries <= max_block_size);
-		
-//		if (dynamic) {
-//			if (execution_time[nqueries].optimal)
-//				gpu_slice = execution_time[nqueries].gpu_slice;
-//			else
-//				gpu_slice = execution_time[nqueries].gpu_slice - gpu_slice_granularity;
-//		}
-//		
-		if (dynamic) deb("Processing %d queries on the GPU", nqueries);
+		deb("Search received %d queries", nqueries);
 
 		//now we proccess our query buffer
-		int nq_gpu = nqueries * gpu_slice;
-		int nq_cpu = nqueries - nq_gpu;
+		int nq_gpu = static_cast<int>(nqueries * gpu_slice);
+		int nq_cpu = static_cast<int>(nqueries - nq_gpu);
 		
-//		start = elapsed();
-		
-//		if (nq_gpu > 0) {
-//			args.nq = nq_gpu;
-//			args.queries = query_buffer + nq_cpu * d;
-//			args.D = D + k * nq_cpu;
-//			args.I = I + k * nq_cpu;
-//			pthread_create(&gpu_thread, NULL, gpu_search, &args);
-//		}
+		assert(nqueries == nq_cpu + nq_gpu);
 
-		std::thread gpu_thread{gpu_search, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu};
+		deb("k=%d", k);
+		std::thread gpu_thread{gpu_search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu};
 		
 		if (nq_cpu > 0) {
 			cpu_index->search(nq_cpu, query_buffer, k, D, I);
@@ -532,42 +458,30 @@ void search(int shard, int nshards, bool dynamic) {
 		
 		gpu_thread.join();
 		
-//		end = elapsed();
-		
-//		deb("et[%d] = %lf\n", nqueries, end - start);
-		
-		MPI_Send(&nqueries, 1, MPI_INT, AGGREGATOR, 0, MPI_COMM_WORLD);
-		MPI_Send(I, k * nqueries, MPI_LONG, AGGREGATOR, 1, MPI_COMM_WORLD);
-		MPI_Send(D, k * nqueries, MPI_FLOAT, AGGREGATOR, 2, MPI_COMM_WORLD);
+		for (int i = 0; i < nblocks; i++) {
+			buffer.removeFront();
+		}
 
-//		if (dynamic) {
-//			if (execution_time[nqueries].time == -1
-//					|| et < execution_time[nqueries].time) {
-//				execution_time[nqueries].time = et;
-//				execution_time[nqueries].gpu_slice = gpu_slice;
-//
-//				//			if (gpu_slice != 1) std::printf("updated gpu_slice of %d to %lf\n", nqueries, gpu_slice);
-//			} else {
-//				execution_time[nqueries].optimal = true;
-//			}
-//		}
+		deb("nqueries=%d, k=%d", nqueries, k);
+		deb("Size = %ld <= %ld", k * nqueries * sizeof(long), sizeof(faiss::Index::idx_t) * test_length * k);
 		
+		deb("QUERIES BEFORE: %d", nqueries);
+		
+		std::printf("QUERIES BEFORE: %d", nqueries);
+		
+		//TODO: Optimize this to a Immediate Synchronous Send
+		MPI_Ssend(&nqueries, 1, MPI_INT, AGGREGATOR, 0, MPI_COMM_WORLD);
+		
+		std::printf("QUERIES AFTER: %d", nqueries);
+		
+		MPI_Ssend(I, k * nqueries, MPI_LONG, AGGREGATOR, 1, MPI_COMM_WORLD);
+		MPI_Ssend(D, k * nqueries, MPI_FLOAT, AGGREGATOR, 2, MPI_COMM_WORLD);
 
 		qn += nqueries;
-		processed += nqueries;
-		nqueries = 0;
-		
-		static int target = 10000;
-		
-		if (qn >= target) {
-			deb("Executed %d/%d queries", target, test_length);
-			target += 10000;
-		}
 	}
 	
 	receiver.join();
-	
-	delete [] query_buffer;
+
 	delete[] I;
 	delete[] D;
 }
@@ -580,7 +494,7 @@ struct PartialResult {
 	long* base_ids;
 };
 
-void merge_results(std::vector<PartialResult>& results, faiss::Index::idx_t* ids, int nshards) {
+void merge_results(std::vector<PartialResult>& results, faiss::Index::idx_t* answers, int nshards) {
 	int counter[nshards];
 	for (int i = 0; i < nshards; i++) counter[i] = 0;
 
@@ -599,30 +513,12 @@ void merge_results(std::vector<PartialResult>& results, faiss::Index::idx_t* ids
 			}
 		}
 
-		ids[topi] = bestId;
+		answers[topi] = bestId;
 		counter[fromShard]++;
 	}
 }
 
-void mock_aggregator() {
-	while (true) {
-		MPI_Status status;
-		int qty;
-		MPI_Recv(&qty, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
-
-		auto I = new faiss::Index::idx_t[k * qty];
-		auto D = new float[k * qty];
-
-		MPI_Recv(I, k * qty, MPI_LONG, status.MPI_SOURCE, 1, MPI_COMM_WORLD,
-		MPI_STATUS_IGNORE);
-		MPI_Recv(D, k * qty, MPI_FLOAT, status.MPI_SOURCE, 2, MPI_COMM_WORLD,
-		MPI_STATUS_IGNORE);
-		
-		std::printf("received  results\n");
-	}
-}
-
-void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss::Index::idx_t* ids) {
+void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss::Index::idx_t* answers) {
 	std::vector<PartialResult> results(nshards);
 	
 	for (int shard = 0; shard < nshards; shard++) {
@@ -630,7 +526,7 @@ void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss::Index
 		queue[shard].pop();
 	}
 				
-	merge_results(results, ids, nshards);
+	merge_results(results, answers, nshards);
 	
 	for (int shard = 0; shard < nshards; shard++) {
 		if (results[shard].own_fields) {
@@ -640,22 +536,19 @@ void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss::Index
 	}
 }
 
-void aggregator(int nshards) {
-	int begin_timing = test_length - 10000 + 1;
-	double end_time[10000];
 
-//	 load ground-truth and convert int to long
+faiss::Index::idx_t* load_gt() {
+	//	 load ground-truth and convert int to long
 	char idx_path[1000];
 	char gt_path[500];
 	sprintf(gt_path, "%s/gnd", src_path);
 	sprintf(idx_path, "%s/idx_%dM.ivecs", gt_path, nb / 1000000);
 
-	int whatever;
+	int n_out;
 	int db_k;
-	int *gt_int = ivecs_read(idx_path, &db_k, &whatever);
-	
+	int *gt_int = ivecs_read(idx_path, &db_k, &n_out);
+
 	faiss::Index::idx_t* gt = new faiss::Index::idx_t[k * NQ];
-	faiss::Index::idx_t* answers = new faiss::Index::idx_t[NQ * k];
 
 	for (int i = 0; i < NQ; i++) {
 		for (int j = 0; j < k; j++) {
@@ -664,18 +557,32 @@ void aggregator(int nshards) {
 	}
 
 	delete[] gt_int;
+	return gt;
+}
+
+void aggregator(int nshards) {
+	int begin_timing = test_length - 10000 + 1;
+	double end_time[10000];
+
+	auto gt = load_gt();
+	
+	faiss::Index::idx_t* answers = new faiss::Index::idx_t[10000 * k];
 	
 	std::queue<PartialResult> queue[nshards];
 	std::queue<PartialResult> to_delete;
 	
-	int qn = 0;
-	
 	deb("Aggregator node is ready");
 	
-	while (qn != test_length) {
+	int qn = 0;
+	while (qn < test_length) {
 		MPI_Status status;
+		
 		int qty;
 		MPI_Recv(&qty, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+		
+		assert(status.MPI_ERROR == MPI_SUCCESS);
+		
+		deb("QTY=%d", qty);
 		
 		int from = status.MPI_SOURCE - 2;
 		
@@ -685,13 +592,14 @@ void aggregator(int nshards) {
 		MPI_Recv(I, k * qty, MPI_LONG, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		MPI_Recv(D, k * qty, MPI_FLOAT, status.MPI_SOURCE, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		
+		deb("Aggregator Received %d queries", qty);
+		
 		for (int q = 0; q < qty; q++) {
 			queue[from].push({D + k * q, I + k * q, q == qty - 1, D, I});
 		}
-		
-		qty = 0;
-//		double start = elapsed();
 
+		int p = 0;
+		
 		while (true) {
 			bool hasEmpty = false;
 
@@ -704,27 +612,24 @@ void aggregator(int nshards) {
 			
 			if (hasEmpty) break;
 
-			aggregate_query(queue, nshards, answers + (qn % NQ) * k);
+			aggregate_query(queue, nshards, answers + (qn % 10000) * k);
 			qn++;
+			p++;
 			
 			if (qn >= begin_timing) {
 				int offset = qn - begin_timing;
+				
+				assert(offset < 10000);
+				
 				end_time[offset] = elapsed();
-
-//				if (offset % 500 == 0) std::printf("end[%d]=%lf\n", offset, end_time[offset]);
 			}
-			
-			qty++;
 		}
 		
-//		double end = elapsed();
-//		std::printf("at[%d] = %lf + %lf\n", qty, start, end - start);
+		deb("AGGREGATOR processed %d queries", p);
 	}
-	
-	std::printf("Random sol: %ld\n", answers[123]);
 
 	int n_1 = 0, n_10 = 0, n_100 = 0;
-	for (int i = 0; i < NQ; i++) {
+	for (int i = 0; i < 10000; i++) {
 		int gt_nn = gt[i * k];
 		for (int j = 0; j < k; j++) {
 			if (answers[i * k + j] == gt_nn) {
@@ -742,6 +647,8 @@ void aggregator(int nshards) {
 	printf("R@10 = %.4f\n", n_10 / float(NQ));
 	printf("R@100 = %.4f\n", n_100 / float(NQ));
 	
+	
+	delete [] gt;
 	
 	MPI_Send(end_time, 10000, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
 }
