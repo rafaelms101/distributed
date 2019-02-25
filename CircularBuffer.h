@@ -6,6 +6,17 @@
 #include <mutex>   
 #include <shared_mutex>
 
+class SimpleBuffer {
+public:
+	SimpleBuffer(const long block_size, const long num_entries) {
+		data = new unsigned char[block_size * num_entries];
+		end = 0;
+	}
+	
+	unsigned char* data;
+	long end;
+};
+
 //TODO: This is just something temporary for the sake of testing
 class Buffer {
 public:
