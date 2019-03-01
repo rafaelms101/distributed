@@ -244,16 +244,17 @@ double next_query_interval() {
 	return constant_interval(query_rate);
 }
 
-int next_query() {
+std::pair<int, double> next_query() {
 	static int qty = 0;
 	static double query_time = elapsed() + 2;
 	
 	double now = elapsed();
 	
-	if (qty >= test_length) return -2;
+	if (qty >= test_length) return {-2, -1};
 	
-	if (now < query_time) return -1;
+	if (now < query_time) return {-1, -1};
 	
+	double old_time = query_time;
 	query_time = now + next_query_interval();
 	
 	qty++;
@@ -262,7 +263,7 @@ int next_query() {
 		deb("Sent %d/%d queries", qty, test_length);
 	}
 	
-	return (qty - 1) % 10000; 
+	return {(qty - 1) % 10000, old_time}; 
 }
 
 void send_queries(int nshards, float* query_buffer, int queries_in_buffer) {
@@ -293,7 +294,7 @@ void single_block_size_generator(int nshards, int block_size) {
 	bool first = true;
 	
 	while (true) {
-		int id = next_query();
+		auto [id, query_time] = next_query();
 		
 		if (id == -1) {
 			continue;
@@ -311,7 +312,7 @@ void single_block_size_generator(int nshards, int block_size) {
 		
 		if (qn >= begin_timing) {
 			int offset = qn - begin_timing;
-			start_time[offset] = elapsed();
+			start_time[offset] = query_time;
 		}
 		
 		memcpy(query_buffer + queries_in_buffer * d, xq + id * d, d * sizeof(float));
