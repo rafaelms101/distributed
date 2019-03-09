@@ -405,10 +405,6 @@ void search(int shard, int nshards, bool dynamic) {
 	
 	assert(test_length % block_size == 0);
 	
-	
-		
-//	deb("Buffer contains %d queries", buffer.entries() * block_size);
-	
 	int qn = 0;
 	while (qn < test_length) {	
 		while (buffer.empty()) {}
@@ -437,9 +433,9 @@ void search(int shard, int nshards, bool dynamic) {
 		buffer.consume(num_blocks);
 
 		//TODO: Optimize this to a Immediate Synchronous Send
-		MPI_Ssend(&nqueries, 1, MPI_INT, AGGREGATOR, 0, MPI_COMM_WORLD);
-		MPI_Ssend(I, k * nqueries, MPI_LONG, AGGREGATOR, 1, MPI_COMM_WORLD);
-		MPI_Ssend(D, k * nqueries, MPI_FLOAT, AGGREGATOR, 2, MPI_COMM_WORLD);
+		//TODO: Merge these two sends into one
+		MPI_Ssend(I, k * nqueries, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+		MPI_Ssend(D, k * nqueries, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
 		
 		qn += nqueries;
 	}
@@ -540,20 +536,20 @@ void aggregator(int nshards) {
 	int qn = 0;
 	while (qn < test_length) {
 		MPI_Status status;
-		
-		int qty;
-		MPI_Recv(&qty, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
-		
-		assert(status.MPI_ERROR == MPI_SUCCESS);
-		
-		int from = status.MPI_SOURCE - 2;
-		
+		MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+
+		int message_size;
+		MPI_Get_count(&status, MPI_LONG, &message_size);
+
+		int qty = message_size / k;
+
 		auto I = new faiss::Index::idx_t[k * qty];
 		auto D = new float[k * qty];
 		
-		MPI_Recv(I, k * qty, MPI_LONG, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		MPI_Recv(D, k * qty, MPI_FLOAT, status.MPI_SOURCE, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		MPI_Recv(I, k * qty, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		MPI_Recv(D, k * qty, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		
+		int from = status.MPI_SOURCE - 2;
 		for (int q = 0; q < qty; q++) {
 			queue[from].push({D + k * q, I + k * q, q == qty - 1, D, I});
 		}
