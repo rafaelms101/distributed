@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <limits>
+#include <condition_variable>
 
 #include "faiss/index_io.h"
 #include "faiss/IndexFlat.h"
@@ -360,11 +361,7 @@ void query_receiver(CircularBuffer* buffer) {
 //	assert(block_size * d * sizeof(float) == buffer->bs());
 	
 	while (queries_received < test_length) {
-		//TODO: instead of a busy loop, use events
 		//TODO: I will left it like this for the time being since buffer will always have free space available.
-
-//		assert(buffer->hasSpace());
-
 		if (buffer->hasSpace()) {
 			float* recv_data = reinterpret_cast<float*>(buffer->peekEnd());
 
@@ -407,14 +404,14 @@ void search(int shard, int nshards, bool dynamic) {
 	
 	int qn = 0;
 	while (qn < test_length) {	
-		while (buffer.empty()) {}
+		buffer.waitForData();
 		
 		//TODO: this is wrong since the buffer MIGHT not be continuous.
 		float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 		int num_blocks = buffer.entries();
 		int nqueries = num_blocks * block_size;
 		
-		deb("Search node processing %d queries", nqueries);
+		if (nqueries != block_size) deb("Search node processing %d queries", nqueries);
 
 		//now we proccess our query buffer
 		int nq_gpu = static_cast<int>(nqueries * gpu_slice);
