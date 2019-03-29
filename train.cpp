@@ -104,7 +104,7 @@ double elapsed ()
 
 int main(int argc, char** argv) {
 	if (argc != 5) {
-		std::printf("Usage: ./train size centroids pq nprobe nqueries gpu\n");
+		std::printf("Usage: ./train size centroids m nprobe\n");
 		std::exit(-1);
 	}
 	
