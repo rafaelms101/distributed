@@ -17,6 +17,8 @@
 #include "gpu/StandardGpuResources.h"
 #include "gpu/GpuIndexIVFPQ.h"
 
+#include <bits/stdc++.h>
+
 
 int nb = 10000000;
 int ncentroids = 1024;
@@ -170,13 +172,29 @@ int main(int argc, char** argv) {
 	float* D = new float[k * nq];
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[k * nq];
 
+	std::vector<double> times;
+
 	while (repeats <= 10) {
 		double before = elapsed();
 		gpu_index->search(nq, queries, k, D, I);
 		double after = elapsed();
 
-		std::printf("%lf\n", after - before);
+		times.push_back(after - before);
 
 		repeats++;
+	}
+
+	std::sort(times.begin(), times.end());
+
+
+	if (times.size() % 2 == 0) {
+		int right = times.size() / 2;
+		int left = right - 1;
+
+		std::printf("%lf\n", (times[left] + times[right]) / 2);
+
+	} else {
+		int mid = times.size() / 2;
+		std::printf("%lf\n", times[mid]);
 	}
 }
