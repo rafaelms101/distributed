@@ -152,52 +152,54 @@ faiss::Index::idx_t* load_gt() {
 }
 
 int main(int argc, char** argv) {
-	int nq = atoi(argv[1]);
+	if (argc != 4) {
+		std::printf("Wrong usage.\n./simple <begin> <end> <step>\n");
+	}
+
+	int begin = atoi(argv[1]);
+	int end = atoi(argv[2]);
+	int step = atoi(argv[3]);
 
 	faiss::gpu::StandardGpuResources res;
 	res.noTempMemory();
 	auto cpu_index = load_index();
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
-
 	float* original_queries = load_queries();
 
-	int length = nq * 128;
-	float* queries = new float[length];
+	float* queries = new float[end * 128];
 
-	for (int i = 0; i < length; i++) {
+	float* D = new float[k * end];
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[k * end];
+
+	for (int i = 0; i < end * 128; i++) {
 		queries[i] = original_queries[i % (10000 * 128)];
 	}
 
-	int repeats = 0;
+	for (int nq = end; nq >= begin; nq -= step) {
+		int repeats = 0;
+		std::vector<double> times;
 
-	float* D = new float[k * nq];
-	faiss::Index::idx_t* I = new faiss::Index::idx_t[k * nq];
+		while (repeats <= 10) {
+			double before = elapsed();
+			gpu_index->search(nq, queries, k, D, I);
+			double after = elapsed();
 
-	std::vector<double> times;
+			times.push_back(after - before);
 
-	while (repeats <= 10) {
-		double before = elapsed();
-		gpu_index->search(nq, queries, k, D, I);
-		double after = elapsed();
+			repeats++;
+		}
 
-		times.push_back(after - before);
+		std::sort(times.begin(), times.end());
 
-		repeats++;
+		if (times.size() % 2 == 0) {
+			int right = times.size() / 2;
+			int left = right - 1;
+
+			std::printf("%lf\n", (times[left] + times[right]) / 2);
+
+		} else {
+			int mid = times.size() / 2;
+			std::printf("%lf\n", times[mid]);
+		}
 	}
-
-	std::sort(times.begin(), times.end());
-
-
-	if (times.size() % 2 == 0) {
-		int right = times.size() / 2;
-		int left = right - 1;
-
-		std::printf("%lf\n", (times[left] + times[right]) / 2);
-
-	} else {
-		int mid = times.size() / 2;
-		std::printf("%lf\n", times[mid]);
-	}
-
-	std::printf("finished\n");
 }
