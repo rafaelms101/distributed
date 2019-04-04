@@ -59,10 +59,11 @@ int ncentroids = 256;
 int m = 8;
 int nprobe = 4;
 
-int block_size = 20;
+const int block_size = 20;
 
+int processing_size;
 double gpu_slice = 1;
-double query_rate = 0;
+double query_rate;
 
 void generator(int nshards);
 void single_block_size_generator(int nshards, int block_size);
@@ -155,8 +156,10 @@ int *ivecs_read(const char *fname, int *d_out, int *n_out)
 }
 
 int main(int argc, char* argv[]) {
+	std::string usage = "./sharded <qr> s|d [<num_blocks> <gpu_slice>]";
+
 	if (argc < 3) {
-		std::printf("Wrong usage. ./sharded <qr> s|d [<block_size> <gpu_slice>]\n");
+		std::printf("Wrong arguments.\n%s\n", usage);
 		std::exit(-1);
 	}
 	
@@ -166,18 +169,15 @@ int main(int argc, char* argv[]) {
 	
 	if (! dynamic) {
 		if (argc != 5 || strcmp("s", argv[2])) {
-			std::printf("Wrong usage. ./sharded <qr> s|d [<block_size> <gpu_slice>]\n");
+			std::printf("Wrong arguments.\n%s\n", usage);
 			std::exit(-1);
 		}
 		
-		block_size = atoi(argv[3]);
+		processing_size = atoi(argv[3]);
 		gpu_slice = atof(argv[4]);
 		
 		assert(gpu_slice >= 0 && gpu_slice <= 1);
 	}
-	
-//	std::printf("started\n");
-	srand(1);
 	
     // Initialize the MPI environment
 	int provided;
@@ -405,14 +405,15 @@ void search(int shard, int nshards, bool dynamic) {
 
 	int qn = 0;
 	while (qn < test_length) {	
-		buffer.waitForData(1);
+		if (dynamic) buffer.waitForData(1);
+		else buffer.waitForData(processing_size);
 		
 		//TODO: this is wrong since the buffer MIGHT not be continuous.
 		float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
-		int num_blocks = buffer.entries();
+		int num_blocks = dynamic ? buffer.entries() : processing_size;
 		int nqueries = num_blocks * block_size;
 		
-		if (nqueries != block_size) deb("Search node processing %d queries", nqueries);
+		deb("Search node processing %d queries", nqueries);
 
 		//now we proccess our query buffer
 		int nq_gpu = static_cast<int>(nqueries * gpu_slice);
@@ -423,10 +424,7 @@ void search(int shard, int nshards, bool dynamic) {
 //		std::thread gpu_thread{gpu_search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu};
 
 		if (nq_cpu > 0) {
-			double before = elapsed();
 			_search(cpu_index, nq_cpu, query_buffer, D, I);
-			double after = elapsed();
-			std::printf("%d %lf\n", nq_cpu, after - before);
 		}
 
 		if (nq_gpu > 0) {
