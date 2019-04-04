@@ -20,8 +20,8 @@
 #include <bits/stdc++.h>
 
 
-int nb = 10000000;
-int ncentroids = 1024;
+int nb = 500000000;
+int ncentroids = 8192;
 int m = 8;
 int k = 10;
 int d = 128;
@@ -155,6 +155,7 @@ int main(int argc, char** argv) {
 	int nq = atoi(argv[1]);
 
 	faiss::gpu::StandardGpuResources res;
+	res.noTempMemory();
 	auto cpu_index = load_index();
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
 
@@ -197,4 +198,6 @@ int main(int argc, char** argv) {
 		int mid = times.size() / 2;
 		std::printf("%lf\n", times[mid]);
 	}
+
+	std::printf("finished\n");
 }

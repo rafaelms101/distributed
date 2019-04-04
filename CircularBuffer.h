@@ -34,7 +34,10 @@ public:
 		used += block_size;
 		end = (end + block_size) % total_size;
 		
-		if (used == block_size) has_data.notify_one();
+		if (waiting && used >= waiting_min_data) {
+			waiting = false;
+			has_data.notify_one();
+		}
 	}
 	
 	unsigned char* peekFront() {
@@ -63,17 +66,23 @@ public:
 		return used / block_size;
 	}
 	
-	void waitForData() {
+	void waitForData(int n) {
 		std::unique_lock lck {mutex};
 		
-		if (used == 0) {
-			has_data.wait(lck, [this] {return used > 0;});
+		waiting_min_data = n * block_size;
+
+		if (used < waiting_min_data) {
+			waiting = true;
+			has_data.wait(lck, [this] {return ! waiting;});
 		}
 	}
 	
 	
 	 
 private:
+	bool waiting = false;
+	long waiting_min_data;
+
 	unsigned char* data;
 	long start = 0;
 	long end = 0;

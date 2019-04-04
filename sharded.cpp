@@ -204,17 +204,12 @@ int main(int argc, char* argv[]) {
     
 
     if (world_rank == 1) {
-//    	std::printf("generator[%d]\n", world_rank);
     	generator(world_size - 2);
     } else if (world_rank == 0) {
-//    	std::printf("aggregator[%d]\n", world_rank);
     	aggregator(world_size - 2);
     } else {
-//    	std::printf("search[%d]\n", world_rank);
     	search(world_rank - 2, world_size - 2, dynamic);
     }
-    
-    
     
     // Finalize the MPI environment.
     MPI_Finalize();
@@ -274,7 +269,6 @@ void send_queries(int nshards, float* query_buffer, int queries_in_buffer) {
 	}
 }
 
-//TODO: mock nodes must be updated
 void single_block_size_generator(int nshards, int block_size) {
 	assert(test_length % block_size == 0);
 	
@@ -351,17 +345,16 @@ void generator(int nshards) {
 	single_block_size_generator(nshards, block_size);
 }
 
-void gpu_search(faiss::Index* gpu_index, int nq, float* queries, float* D, faiss::Index::idx_t* I) {
-	if (nq > 0) gpu_index->search(nq, queries, k, D, I);
+inline void _search(faiss::Index* index, int nq, float* queries, float* D, faiss::Index::idx_t* I) {
+	if (nq > 0) index->search(nq, queries, k, D, I);
 }
 
 void query_receiver(CircularBuffer* buffer) {
+	deb("Receiver");
 	int queries_received = 0;
 	
-//	assert(block_size * d * sizeof(float) == buffer->bs());
-	
+	//TODO: I will left it like this for the time being since buffer will always have free space available. In the future we should use events so that this thread sleeps while waiting for the buffer to have space
 	while (queries_received < test_length) {
-		//TODO: I will left it like this for the time being since buffer will always have free space available.
 		if (buffer->hasSpace()) {
 			float* recv_data = reinterpret_cast<float*>(buffer->peekEnd());
 
@@ -378,10 +371,18 @@ void query_receiver(CircularBuffer* buffer) {
 }
 
 auto load_index(int shard, int nshards) {
+	deb("Started loading");
+
 	char index_path[500];
 	sprintf(index_path, "index/index_%d_%d_%d", nb, ncentroids, m);
+
+	deb("Loading file: %s", index_path);
+
 	FILE* index_file = fopen(index_path, "r");
 	auto cpu_index = read_index(index_file, shard, nshards);
+
+	deb("Ended loading");
+
 	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = nprobe;
 	return cpu_index;
 }
@@ -401,10 +402,10 @@ void search(int shard, int nshards, bool dynamic) {
 	deb("Search node is ready");
 	
 	assert(test_length % block_size == 0);
-	
+
 	int qn = 0;
 	while (qn < test_length) {	
-		buffer.waitForData();
+		buffer.waitForData(1);
 		
 		//TODO: this is wrong since the buffer MIGHT not be continuous.
 		float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
@@ -419,13 +420,21 @@ void search(int shard, int nshards, bool dynamic) {
 		
 		assert(nqueries == nq_cpu + nq_gpu);
 
-		std::thread gpu_thread{gpu_search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu};
-		
+//		std::thread gpu_thread{gpu_search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu};
+
 		if (nq_cpu > 0) {
-			cpu_index->search(nq_cpu, query_buffer, k, D, I);
+			double before = elapsed();
+			_search(cpu_index, nq_cpu, query_buffer, D, I);
+			double after = elapsed();
+			std::printf("%d %lf\n", nq_cpu, after - before);
 		}
 
-		gpu_thread.join();
+		if (nq_gpu > 0) {
+			_search(gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu);
+		}
+
+
+//		gpu_thread.join();
 		
 		buffer.consume(num_blocks);
 
