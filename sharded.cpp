@@ -68,6 +68,8 @@ int processing_size;
 double gpu_slice = 1;
 double query_rate;
 
+constexpr int bench_repeats = 3;
+
 enum class ProcType {Static, Dynamic, Bench};
 
 void generator(int nshards, ProcType ptype);
@@ -292,8 +294,10 @@ void bench_generator(int num_blocks, int block_size, int nshards) {
 	float* xq = load_queries();
 
 	for (int i = 1; i <= num_blocks; i++) {
-		for (int b = 1; b <= i; b++) {
-			send_queries(nshards, xq, block_size);
+		for (int repeats = 1; repeats <= bench_repeats; repeats++) {
+			for (int b = 1; b <= i; b++) {
+				send_queries(nshards, xq, block_size);
+			}
 		}
 	}
 
@@ -551,9 +555,16 @@ void search(int shard, int nshards, ProcType ptype) {
 			assert((test_length - qn) % 20 == 0);
 			num_blocks = processing_size;
 		} else if (ptype == ProcType::Bench) {
+			static int nrepeats = 0;
 			static int nb = 1;
+			
+			if (nrepeats >= bench_repeats) {
+				nrepeats = 0;
+				nb++;
+			}
+						
+			nrepeats++;
 			num_blocks = nb;
-			nb++;
 		}
 		
 		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, (test_length - qn) / 20);
