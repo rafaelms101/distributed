@@ -1,6 +1,7 @@
 #include "QueryBuffer.h"
 
 #include <sys/time.h>
+#include <cstring>
 
 static double now() {
 	struct timeval tv;
@@ -27,8 +28,19 @@ long QueryBuffer::bs() {
 }
 
 bool QueryBuffer::hasSpace() {
-	std::shared_lock { mutex };
-	return used < total_size;
+	std::unique_lock { mutex };
+	
+	if (end == total_size && start >= total_size / 2) realign();
+	
+	return end < total_size;
+}
+
+inline void QueryBuffer::realign() {
+	std::printf("REALIGN: %d queries\n", used / block_size * 20);
+	//move to the beginning
+	std::memmove(data, data + start, used);
+	start = 0;
+	end = used;
 }
 
 void QueryBuffer::add() {
@@ -37,8 +49,11 @@ void QueryBuffer::add() {
 	double n = now();
 	br = n - last_block_time;
 	last_block_time = n;
+	
 	used += block_size;
-	end = (end + block_size) % total_size;
+	end = end + block_size;
+	
+	
 
 	if (waiting && used >= waiting_min_data) {
 		waiting = false;
@@ -53,13 +68,14 @@ unsigned char* QueryBuffer::peekFront() {
 
 unsigned char* QueryBuffer::peekEnd() {
 	std::shared_lock { mutex };
+	
 	return &data[end];
 }
 
 void QueryBuffer::consume(int n) {
 	std::unique_lock { mutex };
 	used -= n * block_size;
-	start = (start + n * block_size) % total_size;
+	start = start + n * block_size;
 }
 
 bool QueryBuffer::empty() {

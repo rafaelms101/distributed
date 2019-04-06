@@ -22,6 +22,7 @@ public:
 	bool empty();
 	void waitForData(int n);
 	int entries();
+	void realign();
 	
 private:
 	bool waiting = false;

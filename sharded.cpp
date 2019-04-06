@@ -515,7 +515,8 @@ void search(int shard, int nshards, ProcType ptype) {
 	ProfileData pd; 
 	if (ptype == ProcType::Dynamic) pd = getProfilingData();
 
-	QueryBuffer buffer(sizeof(float) * d * block_size, test_length / block_size);
+	const long block_size_in_bytes = sizeof(float) * d * block_size;
+	QueryBuffer buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
 	
 	faiss::gpu::StandardGpuResources res;
 
