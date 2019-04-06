@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <limits>
 #include <condition_variable>
+#include <algorithm>
 
 #include "faiss/index_io.h"
 #include "faiss/IndexFlat.h"
@@ -20,7 +21,7 @@
 #include "gpu/GpuIndexIVFPQ.h"
 
 #include "readSplittedIndex.h"
-#include "CircularBuffer.h"
+#include "QueryBuffer.h"
 
 #include <fstream>
 #include <utility>
@@ -29,6 +30,7 @@
 #include <functional>
 
 #include <unordered_map>
+#include <unistd.h>
 
 #include <thread>   
 
@@ -37,6 +39,7 @@
 
 #ifdef DEBUG
 
+//TODO: rename to db or dbg
 #define deb(...) do {std::printf("%lf) ", elapsed()); std::printf(__VA_ARGS__); std::printf("\n");} while(0)
 #else
 #define deb(...) ;
@@ -65,18 +68,18 @@ int processing_size;
 double gpu_slice = 1;
 double query_rate;
 
-void generator(int nshards);
-void single_block_size_generator(int nshards, int block_size);
-void aggregator(int nshards);
-void search(int shard, int nshards, bool dynamic);
+enum class ProcType {Static, Dynamic, Bench};
 
-enum MESSAGE_TAGS {
-	
-};
+void generator(int nshards, ProcType ptype);
+void single_block_size_generator(int nshards, int block_size);
+void aggregator(int nshards, ProcType ptype);
+void search(int shard, int nshards, ProcType ptype);
+
+
 
 // aggregator, generator, search
-
-double elapsed ()
+//TODO: rename to now
+static double elapsed ()
 {
     struct timeval tv;
     gettimeofday (&tv, nullptr);
@@ -156,21 +159,37 @@ int *ivecs_read(const char *fname, int *d_out, int *n_out)
 }
 
 int main(int argc, char* argv[]) {
-	std::string usage = "./sharded <qr> s|d [<num_blocks> <gpu_slice>]";
+	// Initialize the MPI environment
+	int provided;
+	MPI_Init_thread(nullptr, nullptr, MPI_THREAD_MULTIPLE, &provided);
+	assert(provided == MPI_THREAD_MULTIPLE);
+	
+	// Get the rank of the process
+	int world_rank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+	
+	std::string usage = "./sharded <qr> b|s|d [<num_blocks> <gpu_slice>]";
 
 	if (argc < 3) {
-		std::printf("Wrong arguments.\n%s\n", usage);
-		std::exit(-1);
+		if (world_rank == 0) std::printf("Wrong arguments.\n%s\n", usage.c_str());
+		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 	
 	query_rate = atof(argv[1]);
-	bool dynamic = ! strcmp("d", argv[2]);
 	
-	
-	if (! dynamic) {
-		if (argc != 5 || strcmp("s", argv[2])) {
-			std::printf("Wrong arguments.\n%s\n", usage);
-			std::exit(-1);
+	ProcType ptype; 
+	if (! strcmp("d", argv[2])) ptype = ProcType::Dynamic;
+	else if (! strcmp("b", argv[2])) ptype = ProcType::Bench;
+	else if (! strcmp("s", argv[2])) ptype = ProcType::Static;
+	else {
+		if (world_rank == 0) std::printf("Invalid processing type.Expected b | s | d\n");
+		MPI_Abort(MPI_COMM_WORLD, -1);
+	}
+
+	if (ptype == ProcType::Static) {
+		if ((argc != 5 || strcmp("s", argv[2]))  && world_rank == 0) {
+			if (world_rank == 0) std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			MPI_Abort(MPI_COMM_WORLD, -1);
 		}
 		
 		processing_size = atoi(argv[3]);
@@ -178,20 +197,11 @@ int main(int argc, char* argv[]) {
 		
 		assert(gpu_slice >= 0 && gpu_slice <= 1);
 	}
-	
-    // Initialize the MPI environment
-	int provided;
-	MPI_Init_thread(nullptr, nullptr, MPI_THREAD_MULTIPLE, &provided);
-	assert(provided == MPI_THREAD_MULTIPLE);
 
     // Get the number of processes
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-    // Get the rank of the process
-    int world_rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    
     MPI_Group world_group;
     MPI_Comm_group(MPI_COMM_WORLD, &world_group);
     
@@ -204,11 +214,11 @@ int main(int argc, char* argv[]) {
     
 
     if (world_rank == 1) {
-    	generator(world_size - 2);
+    	generator(world_size - 2, ptype);
     } else if (world_rank == 0) {
-    	aggregator(world_size - 2);
+    	aggregator(world_size - 2, ptype);
     } else {
-    	search(world_rank - 2, world_size - 2, dynamic);
+    	search(world_rank - 2, world_size - 2, ptype);
     }
     
     // Finalize the MPI environment.
@@ -269,6 +279,28 @@ void send_queries(int nshards, float* query_buffer, int queries_in_buffer) {
 	}
 }
 
+void send_finished_signal(int nshards) {
+	float dummy = 1;
+	for (int node = 0; node < nshards; node++) {
+		MPI_Ssend(&dummy, 1, MPI_FLOAT, node + 2, 0, MPI_COMM_WORLD);
+	}
+}
+
+void bench_generator(int num_blocks, int block_size, int nshards) {
+	assert(num_blocks * block_size <= NQ);
+
+	float* xq = load_queries();
+
+	for (int i = 1; i <= num_blocks; i++) {
+		for (int b = 1; b <= i; b++) {
+			send_queries(nshards, xq, block_size);
+		}
+	}
+
+	send_finished_signal(nshards);
+}
+
+
 void single_block_size_generator(int nshards, int block_size) {
 	assert(test_length % block_size == 0);
 	
@@ -326,6 +358,8 @@ void single_block_size_generator(int nshards, int block_size) {
 		queries_in_buffer = 0;
 	}
 
+	send_finished_signal(nshards);
+	
 	MPI_Recv(end_time, 10000, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
 			MPI_STATUS_IGNORE);
 
@@ -341,33 +375,47 @@ void single_block_size_generator(int nshards, int block_size) {
 	delete [] xq;
 }
 
-void generator(int nshards) {
-	single_block_size_generator(nshards, block_size);
+void generator(int nshards, ProcType ptype) {
+	if (ptype == ProcType::Bench) bench_generator(3000 / 20, block_size, nshards);
+	else single_block_size_generator(nshards, block_size);
 }
 
 inline void _search(faiss::Index* index, int nq, float* queries, float* D, faiss::Index::idx_t* I) {
 	if (nq > 0) index->search(nq, queries, k, D, I);
 }
 
-void query_receiver(CircularBuffer* buffer) {
+void query_receiver(QueryBuffer* buffer, bool* finished) {
 	deb("Receiver");
 	int queries_received = 0;
 	
 	//TODO: I will left it like this for the time being since buffer will always have free space available. In the future we should use events so that this thread sleeps while waiting for the buffer to have space
-	while (queries_received < test_length) {
-		if (buffer->hasSpace()) {
-			float* recv_data = reinterpret_cast<float*>(buffer->peekEnd());
-
-			MPI_Status status;
-			MPI_Recv(recv_data, block_size * d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-
-			buffer->add();
-
-			assert(status.MPI_ERROR == MPI_SUCCESS);
-
-			queries_received += block_size;
+	while (true) {
+		MPI_Status status;
+		MPI_Probe(GENERATOR, 0, MPI_COMM_WORLD, &status);
+		
+		int message_size;
+		MPI_Get_count(&status, MPI_FLOAT, &message_size);
+		
+		if (message_size == 1) {
+			*finished = true;
+			float dummy;
+			MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+			break;
 		}
+		
+		while (! buffer->hasSpace());
+
+		float* recv_data = reinterpret_cast<float*>(buffer->peekEnd());
+		MPI_Recv(recv_data, block_size * d, MPI_FLOAT, GENERATOR, 0,
+				MPI_COMM_WORLD, &status);
+		buffer->add();
+
+		assert(status.MPI_ERROR == MPI_SUCCESS);
+
+		queries_received += block_size;
 	}
+	
+	deb("Finished receiving queries");
 }
 
 auto load_index(int shard, int nshards) {
@@ -387,9 +435,71 @@ auto load_index(int shard, int nshards) {
 	return cpu_index;
 }
 
-void search(int shard, int nshards, bool dynamic) {
-	CircularBuffer buffer(sizeof(float) * d * block_size, test_length / block_size);
-	std::thread receiver { query_receiver, &buffer };
+//TODO: separate each stage in its own file
+//TODO: currently, we use the same files in all nodes. This doesn't work with ProfileData, since each machine is different. Need to create a way for each node to load a different file.
+struct ProfileData {
+	double* times;
+	int min_block;
+	int max_block;
+};
+
+ProfileData getProfilingData() {	
+	char file_path[100];
+	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", nb, ncentroids, m, k, nprobe, block_size);
+	std::ifstream file;
+	file.open(file_path);
+	
+	if (! file.good()) {
+		std::printf("File prof/%d_%d_%d_%d_%d_%d was not found\n", nb, ncentroids, m, k, nprobe, block_size);
+		MPI_Abort(MPI_COMM_WORLD, -1);
+	}
+
+	int total_size;
+	file >> total_size;
+	
+	double times[total_size + 1];
+	double time_per_block[total_size + 1];
+	
+	times[0] = 0;
+	time_per_block[0] = 0;
+	
+	for (int i = 1; i <= total_size; i++) {
+		file >> times[i];
+		time_per_block[i] = times[i] / i;
+	}
+
+	file.close();
+	
+	double tolerance = 0.1;
+	int minBlock = 1;
+	
+	for (int nb = 2; nb <= total_size; nb++) {
+		if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
+	}
+	
+	double threshold = time_per_block[minBlock] * (1 + tolerance);
+	ProfileData pd;
+
+	int nb = 1;
+	while (time_per_block[nb] > threshold) nb++;
+	pd.min_block = nb;
+	
+	nb = total_size;
+	while (time_per_block[nb] > threshold) nb--;
+	pd.max_block = nb;
+	
+	pd.times = new double[minBlock + 1];
+	pd.times[0] = 0;
+	for (int nb = 1; nb <= minBlock; nb++) pd.times[nb] = time_per_block[nb];
+	
+	return pd;
+}
+
+void search(int shard, int nshards, ProcType ptype) {
+	ProfileData pd; 
+	if (ptype == ProcType::Dynamic) pd = getProfilingData();
+
+	QueryBuffer buffer(sizeof(float) * d * block_size, test_length / block_size);
 	
 	faiss::gpu::StandardGpuResources res;
 
@@ -404,16 +514,35 @@ void search(int shard, int nshards, bool dynamic) {
 	assert(test_length % block_size == 0);
 
 	int qn = 0;
-	while (qn < test_length) {	
-		if (dynamic) buffer.waitForData(1);
-		else buffer.waitForData(processing_size);
+	bool finished = false;
+	
+	std::thread receiver { query_receiver, &buffer, &finished };
+	
+	while (! finished || buffer.entries() >= 1) {
+		if (ptype == ProcType::Dynamic) {
+			buffer.waitForData(1);
+			int num_blocks = buffer.entries();
+			
+			if (num_blocks < pd.min_block) {
+				double work_without_waiting = num_blocks / pd.times[num_blocks];
+				double work_with_waiting = (pd.min_block - num_blocks) * buffer.block_rate() + pd.times[pd.min_block];
+				
+				if (work_with_waiting > work_without_waiting) {
+					usleep((pd.min_block - num_blocks) * buffer.block_rate() * 1000000);
+				}
+			} 
+		}
+		else {
+			assert((test_length - qn) % 20 == 0);
+			buffer.waitForData(std::min(processing_size, (test_length - qn) / 20));
+		}
 		
 		//TODO: this is wrong since the buffer MIGHT not be continuous.
 		float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
-		int num_blocks = dynamic ? buffer.entries() : processing_size;
+		int num_blocks = ptype == ProcType::Dynamic ? std::min(buffer.entries(), pd.max_block) : std::min(processing_size, (test_length - qn) / 20);
 		int nqueries = num_blocks * block_size;
 		
-		deb("Search node processing %d queries", nqueries);
+//		deb("Search node processing %d queries", nqueries);
 
 		//now we proccess our query buffer
 		int nq_gpu = static_cast<int>(nqueries * gpu_slice);
@@ -428,7 +557,9 @@ void search(int shard, int nshards, bool dynamic) {
 		}
 
 		if (nq_gpu > 0) {
+			double before = elapsed();
 			_search(gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu);
+			double after = elapsed();
 		}
 
 
@@ -444,10 +575,15 @@ void search(int shard, int nshards, bool dynamic) {
 		qn += nqueries;
 	}
 	
+	long dummy = 1;
+	MPI_Ssend(&dummy, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+	
 	receiver.join();
 
 	delete[] I;
 	delete[] D;
+	
+	deb("Finished search node");
 }
 
 struct PartialResult {
@@ -524,12 +660,10 @@ faiss::Index::idx_t* load_gt() {
 	return gt;
 }
 
-void aggregator(int nshards) {
-	int begin_timing = test_length - 10000 + 1;
-	double end_time[10000];
+void aggregator(int nshards, ProcType ptype) {
+	std::deque<double> end_times;
 
 	auto gt = load_gt();
-	
 	faiss::Index::idx_t* answers = new faiss::Index::idx_t[10000 * k];
 	
 	std::queue<PartialResult> queue[nshards];
@@ -537,13 +671,23 @@ void aggregator(int nshards) {
 	
 	deb("Aggregator node is ready");
 	
+	int shards_finished = 0;
+	
 	int qn = 0;
-	while (qn < test_length) {
+	while (true) {
 		MPI_Status status;
 		MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
 
 		int message_size;
 		MPI_Get_count(&status, MPI_LONG, &message_size);
+		
+		if (message_size == 1) {
+			shards_finished++;
+			float dummy;
+			MPI_Recv(&dummy, 1, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			if (shards_finished == nshards) break;
+			continue;
+		}
 
 		int qty = message_size / k;
 
@@ -558,8 +702,6 @@ void aggregator(int nshards) {
 			queue[from].push({D + k * q, I + k * q, q == qty - 1, D, I});
 		}
 
-		int p = 0;
-		
 		while (true) {
 			bool hasEmpty = false;
 
@@ -574,39 +716,43 @@ void aggregator(int nshards) {
 
 			aggregate_query(queue, nshards, answers + (qn % 10000) * k);
 			qn++;
-			p++;
 			
-			if (qn >= begin_timing) {
-				int offset = qn - begin_timing;
-				
-				assert(offset < 10000);
-				
-				end_time[offset] = elapsed();
-			}
+			if (end_times.size() >= 10000) end_times.pop_front();
+			end_times.push_back(elapsed());
 		}
 	}
-
-	int n_1 = 0, n_10 = 0, n_100 = 0;
-	for (int i = 0; i < 10000; i++) {
-		int gt_nn = gt[i * k];
-		for (int j = 0; j < k; j++) {
-			if (answers[i * k + j] == gt_nn) {
-				if (j < 1)
-					n_1++;
-				if (j < 10)
-					n_10++;
-				if (j < 100)
-					n_100++;
-			}
-		}
-	}
-
-	printf("R@1 = %.4f\n", n_1 / float(NQ));
-	printf("R@10 = %.4f\n", n_10 / float(NQ));
-	printf("R@100 = %.4f\n", n_100 / float(NQ));
 	
+	if (ptype != ProcType::Bench) {
+		int n_1 = 0, n_10 = 0, n_100 = 0;
+		for (int i = 0; i < 10000; i++) {
+			int gt_nn = gt[i * k];
+			for (int j = 0; j < k; j++) {
+				if (answers[i * k + j] == gt_nn) {
+					if (j < 1)
+						n_1++;
+					if (j < 10)
+						n_10++;
+					if (j < 100)
+						n_100++;
+				}
+			}
+		}
+
+		printf("R@1 = %.4f\n", n_1 / float(NQ));
+		printf("R@10 = %.4f\n", n_10 / float(NQ));
+		printf("R@100 = %.4f\n", n_100 / float(NQ));
+		
+		double end_times_array[10000];
+
+		for (int i = 0; i < 10000; i++) {
+			end_times_array[i] = end_times.front();
+			end_times.pop_front();
+		}
+
+		MPI_Send(end_times_array, 10000, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
+	}
 	
 	delete [] gt;
 	
-	MPI_Send(end_time, 10000, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
+	deb("Finished aggregator");
 }
