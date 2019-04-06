@@ -252,7 +252,7 @@ double next_query_interval() {
 
 std::pair<int, double> next_query() {
 	static int qty = 0;
-	static double query_time = elapsed() + 2;
+	static double query_time = elapsed();
 	
 	double now = elapsed();
 	
@@ -376,6 +376,15 @@ void single_block_size_generator(int nshards, int block_size) {
 }
 
 void generator(int nshards, ProcType ptype) {
+	int shards_ready = 0;
+	
+	//Waiting for search nodes to be ready
+	while (shards_ready < nshards) {
+		float dummy;
+		MPI_Recv(&dummy, 1, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		shards_ready++;
+	}
+
 	if (ptype == ProcType::Bench) bench_generator(3000 / 20, block_size, nshards);
 	else single_block_size_generator(nshards, block_size);
 }
@@ -387,6 +396,9 @@ inline void _search(faiss::Index* index, int nq, float* queries, float* D, faiss
 void query_receiver(QueryBuffer* buffer, bool* finished) {
 	deb("Receiver");
 	int queries_received = 0;
+	
+	float dummy;
+	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 	
 	//TODO: I will left it like this for the time being since buffer will always have free space available. In the future we should use events so that this thread sleeps while waiting for the buffer to have space
 	while (true) {
@@ -519,9 +531,11 @@ void search(int shard, int nshards, ProcType ptype) {
 	std::thread receiver { query_receiver, &buffer, &finished };
 	
 	while (! finished || buffer.entries() >= 1) {
+		int num_blocks;
+		
 		if (ptype == ProcType::Dynamic) {
 			buffer.waitForData(1);
-			int num_blocks = buffer.entries();
+			num_blocks = buffer.entries();
 			
 			if (num_blocks < pd.min_block) {
 				double work_without_waiting = num_blocks / pd.times[num_blocks];
@@ -531,18 +545,25 @@ void search(int shard, int nshards, ProcType ptype) {
 					usleep((pd.min_block - num_blocks) * buffer.block_rate() * 1000000);
 				}
 			} 
-		}
-		else {
+			
+			num_blocks = std::min(buffer.entries(), pd.max_block);
+		} else if (ptype == ProcType::Static) {
 			assert((test_length - qn) % 20 == 0);
-			buffer.waitForData(std::min(processing_size, (test_length - qn) / 20));
+			num_blocks = processing_size;
+		} else if (ptype == ProcType::Bench) {
+			static int nb = 1;
+			num_blocks = nb;
+			nb++;
 		}
+		
+		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, (test_length - qn) / 20);
+		buffer.waitForData(num_blocks);
 		
 		//TODO: this is wrong since the buffer MIGHT not be continuous.
 		float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
-		int num_blocks = ptype == ProcType::Dynamic ? std::min(buffer.entries(), pd.max_block) : std::min(processing_size, (test_length - qn) / 20);
 		int nqueries = num_blocks * block_size;
 		
-//		deb("Search node processing %d queries", nqueries);
+		deb("Search node processing %d queries", nqueries);
 
 		//now we proccess our query buffer
 		int nq_gpu = static_cast<int>(nqueries * gpu_slice);
