@@ -504,6 +504,8 @@ ProfileData getProfilingData() {
 	while (time_per_block[nb] > threshold) nb--;
 	pd.max_block = nb;
 	
+	deb("min: %d, max: %d", pd.min_block * block_size, pd.max_block * block_size);
+	
 	pd.times = new double[minBlock + 1];
 	pd.times[0] = 0;
 	for (int nb = 1; nb <= minBlock; nb++) pd.times[nb] = time_per_block[nb];
@@ -511,7 +513,38 @@ ProfileData getProfilingData() {
 	return pd;
 }
 
+void store_profile_data(std::vector<double>& procTimes) {
+	//now we write the time data on a file
+	char file_path[100];
+	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", nb, ncentroids, m, k, nprobe,
+			block_size);
+	std::ofstream file;
+	file.open(file_path);
+
+	int blocks = procTimes.size() / bench_repeats;
+	file << blocks << std::endl;
+
+	int ptr = 0;
+	
+	for (int b = 1; b <= blocks; b++) {
+		std::vector<double> times;
+		
+		for (int repeats = 1; repeats <= bench_repeats; repeats++) {
+			times.push_back(procTimes[ptr++]);
+		}
+		
+		std::sort(times.begin(), times.end());
+		
+		int mid = bench_repeats / 2;
+		file << times[mid] << std::endl;
+	}
+
+	file.close();
+}
+
 void search(int shard, int nshards, ProcType ptype) {
+	std::vector<double> procTimes;
+	
 	ProfileData pd; 
 	if (ptype == ProcType::Dynamic) pd = getProfilingData();
 
@@ -593,8 +626,11 @@ void search(int shard, int nshards, ProcType ptype) {
 			double before = elapsed();
 			_search(gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu);
 			double after = elapsed();
+			
+			if (ptype == ProcType::Bench) {
+				procTimes.push_back(after - before);
+			}
 		}
-
 
 //		gpu_thread.join();
 		
@@ -616,6 +652,8 @@ void search(int shard, int nshards, ProcType ptype) {
 	delete[] I;
 	delete[] D;
 	
+	if (ptype == ProcType::Bench) store_profile_data(procTimes);
+
 	deb("Finished search node");
 }
 
