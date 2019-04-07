@@ -170,35 +170,41 @@ int main(int argc, char* argv[]) {
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	
-	std::string usage = "./sharded <qr> b|s|d [<num_blocks> <gpu_slice>]";
+	std::string usage = "./sharded b | d <qr> | s <qr> <num_blocks> <gpu_slice>";
 
-	if (argc < 3) {
+	if (argc < 2) {
 		if (world_rank == 0) std::printf("Wrong arguments.\n%s\n", usage.c_str());
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 	
-	query_rate = atof(argv[1]);
-	
 	ProcType ptype; 
-	if (! strcmp("d", argv[2])) ptype = ProcType::Dynamic;
-	else if (! strcmp("b", argv[2])) ptype = ProcType::Bench;
-	else if (! strcmp("s", argv[2])) ptype = ProcType::Static;
+	if (! strcmp("d", argv[1])) ptype = ProcType::Dynamic;
+	else if (! strcmp("b", argv[1])) ptype = ProcType::Bench;
+	else if (! strcmp("s", argv[1])) ptype = ProcType::Static;
 	else {
 		if (world_rank == 0) std::printf("Invalid processing type.Expected b | s | d\n");
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 
-	if (ptype == ProcType::Static) {
-		if ((argc != 5 || strcmp("s", argv[2]))  && world_rank == 0) {
+	if (ptype == ProcType::Dynamic) {
+		if (argc != 3) {
 			if (world_rank == 0) std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			MPI_Abort(MPI_COMM_WORLD, -1);
 		}
 		
+		query_rate = atof(argv[2]);
+	} else if (ptype == ProcType::Static) {
+		if (argc != 5) {
+			if (world_rank == 0) std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			MPI_Abort(MPI_COMM_WORLD, -1);
+		}
+		
+		query_rate = atof(argv[2]);
 		processing_size = atoi(argv[3]);
 		gpu_slice = atof(argv[4]);
-		
+
 		assert(gpu_slice >= 0 && gpu_slice <= 1);
-	}
+	} 
 
     // Get the number of processes
     int world_size;
