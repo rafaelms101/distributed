@@ -53,7 +53,8 @@ char src_path[] = "/home/rafael/mestrado/bigann/";
 
 #define NQ 10000
 
-int test_length = 80000;
+constexpr int test_length = 100000;
+constexpr int eval_length = 50000;
 
 int d = 128;
 int k = 10;
@@ -277,7 +278,7 @@ std::pair<int, double> next_query() {
 		deb("Sent %d/%d queries", qty, test_length);
 	}
 	
-	return {(qty - 1) % 10000, old_time}; 
+	return {(qty - 1) % NQ, old_time}; 
 }
 
 void send_queries(int nshards, float* query_buffer, int queries_in_buffer) {
@@ -316,10 +317,10 @@ void single_block_size_generator(int nshards, int block_size) {
 	
 	float* xq = load_queries();
 
-	double end_time[10000];
-	double start_time[10000];
+	double end_time[eval_length];
+	double start_time[eval_length];
 	
-	int begin_timing = test_length - 10000 + 1;
+	int begin_timing = test_length - eval_length + 1;
 
 	float* query_buffer = new float[test_length * d];
 	float* to_be_deleted = query_buffer;
@@ -370,16 +371,16 @@ void single_block_size_generator(int nshards, int block_size) {
 
 	send_finished_signal(nshards);
 	
-	MPI_Recv(end_time, 10000, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
+	MPI_Recv(end_time, eval_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
 			MPI_STATUS_IGNORE);
 
 	double total = 0;
 
-	for (int i = 0; i < 10000; i++) {
+	for (int i = 0; i < eval_length; i++) {
 		total += end_time[i] - start_time[i];
 	}
 
-	std::printf("%lf\n", total / 10000);
+	std::printf("%lf\n", total / eval_length);
 	
 	delete [] to_be_deleted;
 	delete [] xq;
@@ -741,7 +742,7 @@ void aggregator(int nshards, ProcType ptype) {
 	std::deque<double> end_times;
 
 	auto gt = load_gt();
-	faiss::Index::idx_t* answers = new faiss::Index::idx_t[10000 * k];
+	faiss::Index::idx_t* answers = new faiss::Index::idx_t[NQ * k];
 	
 	std::queue<PartialResult> queue[nshards];
 	std::queue<PartialResult> to_delete;
@@ -791,10 +792,10 @@ void aggregator(int nshards, ProcType ptype) {
 			
 			if (hasEmpty) break;
 
-			aggregate_query(queue, nshards, answers + (qn % 10000) * k);
+			aggregate_query(queue, nshards, answers + (qn % NQ) * k);
 			qn++;
 			
-			if (end_times.size() >= 10000) end_times.pop_front();
+			if (end_times.size() >= eval_length) end_times.pop_front();
 			end_times.push_back(elapsed());
 		}
 	}
@@ -819,14 +820,14 @@ void aggregator(int nshards, ProcType ptype) {
 		printf("R@10 = %.4f\n", n_10 / float(NQ));
 		printf("R@100 = %.4f\n", n_100 / float(NQ));
 		
-		double end_times_array[10000];
+		double end_times_array[eval_length];
 
-		for (int i = 0; i < 10000; i++) {
+		for (int i = 0; i < eval_length; i++) {
 			end_times_array[i] = end_times.front();
 			end_times.pop_front();
 		}
 
-		MPI_Send(end_times_array, 10000, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
+		MPI_Send(end_times_array, eval_length, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
 	}
 	
 	delete [] gt;
