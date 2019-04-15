@@ -471,12 +471,12 @@ struct ProfileData {
 
 ProfileData getProfilingData(bool cpu) {	
 	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", nb, ncentroids, m, k, nprobe, block_size);
+	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", nb, ncentroids, m, k, nprobe, block_size, cpu ? "cpu" : "gpu");
 	std::ifstream file;
 	file.open(file_path);
 	
 	if (! file.good()) {
-		std::printf("File prof/%d_%d_%d_%d_%d_%d was not found\n", nb, ncentroids, m, k, nprobe, block_size);
+		std::printf("File prof/%d_%d_%d_%d_%d_%d_%s", nb, ncentroids, m, k, nprobe, block_size, cpu ? "cpu" : "gpu");
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 
@@ -498,6 +498,8 @@ ProfileData getProfilingData(bool cpu) {
 		pd.times = new double[total_size + 1];
 		pd.times[0] = 0;
 		for (int nb = 1; nb <= total_size; nb++) pd.times[nb] = times[nb];
+		pd.max_block = total_size;
+		pd.min_block = 0;
 	} else {
 		double time_per_block[total_size + 1];
 		time_per_block[0] = 0;
@@ -547,22 +549,38 @@ void store_profile_data(const char* type, std::vector<double>& procTimes) {
 	file << blocks << std::endl;
 
 	int ptr = 0;
-	
+
 	for (int b = 1; b <= blocks; b++) {
 		std::vector<double> times;
-		
+
 		for (int repeats = 1; repeats <= bench_repeats; repeats++) {
 			times.push_back(procTimes[ptr++]);
 		}
-		
+
 		std::sort(times.begin(), times.end());
-		
+
 		int mid = bench_repeats / 2;
 		file << times[mid] << std::endl;
 	}
 
 	file.close();
 }
+
+int bsearch(int min, int max, double* data, double val) {
+	while (max - min >= 2) {
+		int mid = (min + max) / 2;
+
+		if (data[mid] > val) {
+			max = mid - 1;
+		} else if (data[mid] < val) {
+			min = mid;
+		} else return mid;
+	}
+	
+	if (data[max] <= val) return max;
+	else return min;
+}
+
 
 void search(int shard, int nshards, ProcType ptype) {
 	std::vector<double> procTimesGpu;
@@ -617,11 +635,15 @@ void search(int shard, int nshards, ProcType ptype) {
 
 			num_blocks = buffer.entries();
 			int bgpu = std::min(num_blocks, pdGPU.max_block);
-			int bcpu = num_blocks - bgpu;
-//			
-//			if (bcpu > 0) {
-//				bsearch(0, bcpu, pdCPU.times, pdGPU.times[pdGPU.max_block]);
-//			}
+			int bcpu = std::min(num_blocks - bgpu, pdCPU.max_block);
+			
+			if (bcpu > 0) {
+				bcpu = bsearch(0, bcpu, pdCPU.times, pdGPU.times[pdGPU.max_block]);
+			}
+			
+			nq_cpu = bcpu * block_size;
+			if (nq_cpu != 0) deb("%d CPU queries", nq_cpu);
+			nq_gpu = bgpu * block_size;
 			
 			break;
 		}
