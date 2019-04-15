@@ -152,18 +152,19 @@ faiss::Index::idx_t* load_gt() {
 }
 
 int main(int argc, char** argv) {
-	if (argc != 4) {
-		std::printf("Wrong usage.\n./simple <begin> <end> <step>\n");
+	if (argc != 5) {
+		std::printf("Wrong usage.\n./simple <cpu|gpu> <begin> <end> <step>\n");
 	}
 
-	int begin = atoi(argv[1]);
-	int end = atoi(argv[2]);
-	int step = atoi(argv[3]);
+	bool gpu = ! strcmp("gpu", argv[1]);
+	int begin = atoi(argv[2]);
+	int end = atoi(argv[3]);
+	int step = atoi(argv[4]);
 
 	faiss::gpu::StandardGpuResources res;
-	res.noTempMemory();
-	auto cpu_index = load_index();
-	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
+
+	auto index = load_index();
+	if (gpu) index = faiss::gpu::index_cpu_to_gpu(&res, 0, index, nullptr);
 	float* original_queries = load_queries();
 
 	float* queries = new float[end * 128];
@@ -175,13 +176,13 @@ int main(int argc, char** argv) {
 		queries[i] = original_queries[i % (10000 * 128)];
 	}
 
-	for (int nq = end; nq >= begin; nq -= step) {
+	for (int nq = begin; nq <= end; nq += step) {
 		int repeats = 0;
 		std::vector<double> times;
 
 		while (repeats <= 10) {
 			double before = elapsed();
-			gpu_index->search(nq, queries, k, D, I);
+			index->search(nq, queries, k, D, I);
 			double after = elapsed();
 
 			times.push_back(after - before);
@@ -191,15 +192,17 @@ int main(int argc, char** argv) {
 
 		std::sort(times.begin(), times.end());
 
+		double median;
+		
 		if (times.size() % 2 == 0) {
 			int right = times.size() / 2;
 			int left = right - 1;
-
-			std::printf("%lf\n", (times[left] + times[right]) / 2);
-
+			median = times[left] + times[right] / 2;
 		} else {
 			int mid = times.size() / 2;
-			std::printf("%lf\n", times[mid]);
+			median = times[mid];
 		}
+		
+		std::printf("%d %lf\n", nq, median);
 	}
 }
