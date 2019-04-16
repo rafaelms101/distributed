@@ -70,7 +70,6 @@ constexpr int bench_repeats = 3;
 enum class ProcType {Static, Dynamic, Bench};
 
 void generator(int nshards, ProcType ptype, Config& cfg);
-void single_block_size_generator(int nshards, int block_size, Config& cfg);
 void aggregator(int nshards, ProcType ptype, Config& cfg);
 void search(int shard, int nshards, ProcType ptype, Config& cfg);
 
