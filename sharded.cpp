@@ -886,11 +886,35 @@ void send_times(std::deque<double>& end_times, int eval_length) {
 	MPI_Send(end_times_array, eval_length, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
 }
 
+//TODO: make this work for generic k's
+void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
+	auto gt = load_gt(cfg);
+
+	int n_1 = 0, n_10 = 0;
+	
+	for (int i = cfg.test_length - cfg.eval_length; i < cfg.test_length; i++) {
+		int answer_id = i % cfg.eval_length;
+		int nq = i % cfg.nq;
+		int gt_nn = gt[nq * cfg.k];
+		
+		for (int j = 0; j < cfg.k; j++) {
+			if (answers[answer_id * cfg.k + j] == gt_nn) {
+				if (j < 1) n_1++;
+				if (j < 10) n_10++;
+			}
+		}
+	}
+
+	printf("R@1 = %.4f\n", n_1 / float(cfg.eval_length));
+	printf("R@10 = %.4f\n", n_10 / float(cfg.eval_length));
+	
+	delete [] gt;
+}
+
 void aggregator(int nshards, ProcType ptype, Config& cfg) {
 	std::deque<double> end_times;
 
-	auto gt = load_gt(cfg);
-	faiss::Index::idx_t* answers = new faiss::Index::idx_t[cfg.nq * cfg.k];
+	faiss::Index::idx_t* answers = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
 	
 	std::queue<PartialResult> queue[nshards];
 	std::queue<PartialResult> to_delete;
@@ -899,7 +923,7 @@ void aggregator(int nshards, ProcType ptype, Config& cfg) {
 	
 	int shards_finished = 0;
 	
-	int qn = 0;
+	long qn = 0;
 	while (true) {
 		MPI_Status status;
 		MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
@@ -940,7 +964,7 @@ void aggregator(int nshards, ProcType ptype, Config& cfg) {
 			
 			if (hasEmpty) break;
 
-			aggregate_query(queue, nshards, answers + (qn % cfg.nq) * cfg.k, cfg.k);
+			aggregate_query(queue, nshards, answers + (qn % cfg.eval_length) * cfg.k, cfg.k);
 			qn++;
 			
 			if (end_times.size() >= cfg.eval_length) end_times.pop_front();
@@ -948,9 +972,10 @@ void aggregator(int nshards, ProcType ptype, Config& cfg) {
 		}
 	}
 	
-	if (ptype != ProcType::Bench) send_times(end_times, cfg.eval_length);
-	
-	delete [] gt;
+	if (ptype != ProcType::Bench) {
+		show_recall(answers, cfg); 
+		send_times(end_times, cfg.eval_length);
+	}
 	
 	deb("Finished aggregator");
 }
