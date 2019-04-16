@@ -11,7 +11,7 @@ OPT = -O3
 %.o: %.cpp
 	$(CXX) -g $(OPT) $(CUDACFLAGS) $(EXTRA) -o $@ -c $^ -I.. -I../faiss -std=c++17
 
-sharded: utils.o generator.o search.o aggregator.o QueryBuffer.o sharded.o ../faiss/gpu/libgpufaiss.a ../faiss/libfaiss.a 
+sharded: utils.o readSplittedIndex.o generator.o search.o aggregator.o QueryBuffer.o sharded.o ../faiss/gpu/libgpufaiss.a ../faiss/libfaiss.a 
 	mpic++ $(OPT) $(LDFLAGS) $(NVCCLDFLAGS) -o $@ $^ $(LIBS) $(NVCCLIBS)
 
 train: train.o ../faiss/gpu/libgpufaiss.a ../faiss/libfaiss.a

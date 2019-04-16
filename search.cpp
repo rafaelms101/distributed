@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <future>
 #include <fstream>
+#include <unistd.h>
  
 #include "faiss/index_io.h"
 #include "faiss/IndexFlat.h"
