@@ -14,7 +14,7 @@ OPT = -O3
 demo_ivfpq_indexing_gpu: demo_ivfpq_indexing_gpu.o
 	$(CXX) $(OPT) $(LDFLAGS) $(NVCCLDFLAGS) -o $@ $^ $(LIBS) $(NVCCLIBS)
 
-sharded: sharded.o ../faiss/gpu/libgpufaiss.a ../faiss/libfaiss.a QueryBuffer.o
+sharded: utils.o generator.o QueryBuffer.o sharded.o ../faiss/gpu/libgpufaiss.a ../faiss/libfaiss.a 
 	mpic++ $(OPT) $(LDFLAGS) $(NVCCLDFLAGS) -o $@ $^ $(LIBS) $(NVCCLIBS)
 
 train: train.o ../faiss/gpu/libgpufaiss.a ../faiss/libfaiss.a

@@ -1,13 +1,12 @@
 #include <mpi.h>
 #include <cstdio>
 #include <cstdlib>
-#include <ctime>
 #include <queue>
 #include <assert.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/time.h>
+
 #include <limits>
 #include <condition_variable>
 #include <algorithm>
@@ -31,132 +30,16 @@
 
 #include "readSplittedIndex.h"
 #include "QueryBuffer.h"
+#include "generator.h"
+#include "utils.h"
 
-#define DEBUG
-
-#ifdef DEBUG
-
-//TODO: rename to db or dbg
-#define deb(...) do {std::printf("%lf) ", elapsed()); std::printf(__VA_ARGS__); std::printf("\n");} while(0)
-#else
-#define deb(...) ;
-#endif
-
-//#define BENCHMARK
 #define AGGREGATOR 0
 #define GENERATOR 1
 
-char src_path[] = "/home/rafael/mestrado/bigann/";
-
-struct Config {
-	int d;
-	int nb;
-	int ncentroids;
-	int m;
-	int k;
-	int nprobe;
-	int block_size;
-	int test_length;
-	int eval_length;
-	int nq;
-};
-
-int processing_size;
-double gpu_slice = 1;
-double query_rate;
-
-constexpr int bench_repeats = 3;
-
-enum class ProcType {Static, Dynamic, Bench};
-
-void generator(int nshards, ProcType ptype, Config& cfg);
 void aggregator(int nshards, ProcType ptype, Config& cfg);
 void search(int shard, int nshards, ProcType ptype, Config& cfg);
 
-
-
-// aggregator, generator, search
-//TODO: rename to now
-static double elapsed ()
-{
-    struct timeval tv;
-    gettimeofday (&tv, nullptr);
-    return  tv.tv_sec + tv.tv_usec * 1e-6;
-}
-
-float* to_float_array(unsigned char* vector, int ne, int d) {
-	float* res = new float[ne * d];
-	
-	for (int i = 0; i < ne; i++) {
-		vector += 4;
-		
-		for (int cd = 0; cd < d; cd++) {
-			res[i * d + cd] = *vector;
-			vector++;
-		}
-	}
-	
-	return res;
-}
-
-unsigned char* bvecs_read(const char *fname, size_t* filesize)
-{
-	FILE *f = fopen(fname, "rb");
-	if (!f) {
-		fprintf(stderr, "could not open %s\n", fname);
-		perror("");
-		abort();
-	}
-
-	struct stat st;
-	fstat(fileno(f), &st);
-	*filesize = st.st_size;
-	
-	unsigned char* dataset = (unsigned char*) mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fileno(f), 0);
-    
-    fclose(f);
-    
-    return dataset;
-}
-
-float * fvecs_read (const char *fname, int *d_out, int *n_out){
-    FILE *f = fopen(fname, "r");
-    if(!f) {
-        fprintf(stderr, "could not open %s\n", fname);
-        perror("");
-        abort();
-    }
-    int d;	
-
-    assert(fread(&d, 1, sizeof(int), f) == sizeof(int) || !"could not read d");
-    assert((d > 0 && d < 1000000) || !"unreasonable dimension");
-    fseek(f, 0, SEEK_SET);
-    struct stat st;
-    fstat(fileno(f), &st);
-    size_t sz = st.st_size;
-    assert(sz % ((d + 1) * 4) == 0 || !"weird file size");
-    size_t n = sz / ((d + 1) * 4);
-
-    *d_out = (int) d; *n_out = (int) n;
-    float *x = new float[n * (d + 1)];
-    size_t nr = fread(x, sizeof(float), n * (d + 1), f);
-    assert(nr == n * (d + 1) || !"could not read whole file");
-
-    // shift array to remove row headers
-    for(size_t i = 0; i < n; i++)
-        memmove(x + i * d, x + 1 + i * (d + 1), d * sizeof(*x));
-
-    fclose(f);
-    return x;
-}
-
-// not very clean, but works as long as sizeof(int) == sizeof(float)
-int *ivecs_read(const char *fname, int *d_out, int *n_out)
-{
-    return (int*)fvecs_read(fname, d_out, n_out);
-}
-
-ProcType handle_parameters(int argc, char* argv[]) {
+ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 	std::string usage = "./sharded b | d <qr> | s <qr> <num_blocks> <gpu_slice>";
 
 	if (argc < 2) {
@@ -179,20 +62,20 @@ ProcType handle_parameters(int argc, char* argv[]) {
 			MPI_Abort(MPI_COMM_WORLD, -1);
 		}
 
-		query_rate = atof(argv[2]);
+		cfg.query_rate = atof(argv[2]);
 	} else if (ptype == ProcType::Static) {
 		if (argc != 5) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			MPI_Abort(MPI_COMM_WORLD, -1);
 		}
 
-		query_rate = atof(argv[2]);
-		processing_size = atoi(argv[3]);
-		gpu_slice = atof(argv[4]);
+		cfg.query_rate = atof(argv[2]);
+		cfg.processing_size = atoi(argv[3]);
+		cfg.gpu_slice = atof(argv[4]);
 
-		assert(gpu_slice >= 0 && gpu_slice <= 1);
+		assert(cfg.gpu_slice >= 0 && cfg.gpu_slice <= 1);
 	} else if (ptype == ProcType::Bench) {
-		gpu_slice = 0.5;
+		//nothing
 	}
 
 	return ptype;
@@ -204,11 +87,11 @@ Config inline loadConfig() {
 	cfg.nb = 500000000;
 	cfg.ncentroids = 8192;
 	cfg.m = 8;
-	cfg.k = 10;
+	cfg.k = 100;
 	cfg.nprobe = 8;
 	cfg.block_size = 20;
 	cfg.test_length = 100000;
-	cfg.eval_length = 50000;
+	cfg.eval_length = 10000;
 	cfg.nq = 10000;
 	
 	return cfg;
@@ -224,7 +107,7 @@ int main(int argc, char* argv[]) {
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	
-	ProcType ptype = handle_parameters(argc,argv);
+	ProcType ptype = handle_parameters(argc, argv, cfg);
 
     // Get the number of processes
     int world_size;
@@ -253,197 +136,10 @@ int main(int argc, char* argv[]) {
     MPI_Finalize();
 }
 
-double constant_interval(double val) {
-	return val;
-}
-
-float* load_queries(int d, int nq) {
-	char query_path[500];
-	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
-
-	int world_size;
-	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
-	//loading queries
-	size_t fz;
-	unsigned char* queries = bvecs_read(query_path, &fz);
-	float* xq = to_float_array(queries, nq, d);
-	munmap(queries, fz);
-	
-	return xq;
-}
-
-
-double fast_slow_fast_interval(int eval_length) {
-	constexpr double slow_time = 0.001;
-	constexpr double fast_time = 0.0001;
-	double delta_time = (slow_time - fast_time) / (eval_length / 2);
-
-	static bool going_up = false;
-	static double curr_time = slow_time;
-
-	if (going_up) {
-		curr_time = curr_time + delta_time;
-	} else {
-		curr_time = curr_time - delta_time;
-	}
-
-	if (curr_time > slow_time) {
-		deb("Now going up in speed");
-		curr_time = slow_time - delta_time;
-		going_up = ! going_up;
-	} else if (curr_time < fast_time) {
-		deb("Now going down in speed");
-		curr_time = fast_time + delta_time;
-		going_up = ! going_up;
-	}
-
-	return curr_time;
-}
-
-double next_query_interval() {
-	return constant_interval(query_rate);
-}
-
-std::pair<int, double> next_query(int test_length, int nq) {
-	static int qty = 0;
-	static double query_time = elapsed();
-	
-	double now = elapsed();
-	
-	if (qty >= test_length) return {-2, -1};
-	
-	if (now < query_time) return {-1, -1};
-	
-	double old_time = query_time;
-	query_time = now + next_query_interval();
-	
-	qty++;
-	
-	if (qty % 10000 == 0 || (qty % 1000 == 0 && qty <= 10000)) {
-		deb("Sent %d/%d queries", qty, test_length);
-	}
-	
-	return {(qty - 1) % nq, old_time}; 
-}
-
-void send_queries(int nshards, float* query_buffer, int queries_in_buffer, int d) {
-	for (int node = 0; node < nshards; node++) {
-		MPI_Ssend(query_buffer, queries_in_buffer * d, MPI_FLOAT, node + 2, 0, MPI_COMM_WORLD);
-	}
-}
-
-void send_finished_signal(int nshards) {
-	float dummy = 1;
-	for (int node = 0; node < nshards; node++) {
-		MPI_Ssend(&dummy, 1, MPI_FLOAT, node + 2, 0, MPI_COMM_WORLD);
-	}
-}
-
-void bench_generator(int num_blocks, int block_size, int nshards, Config& cfg) {
-	assert(num_blocks * block_size <= cfg.nq);
-
-	float* xq = load_queries(cfg.d, cfg.nq);
-
-	for (int i = 1; i <= num_blocks; i++) {
-		for (int repeats = 1; repeats <= bench_repeats; repeats++) {
-			for (int b = 1; b <= i * 2; b++) {
-				send_queries(nshards, xq, cfg.block_size, cfg.d);
-			}
-		}
-	}
-
-	send_finished_signal(nshards);
-}
-
-
-void single_block_size_generator(int nshards, Config& cfg) {
-	assert(cfg.test_length % cfg.block_size == 0);
-	
-	float* xq = load_queries(cfg.d, cfg.nq);
-
-	double start_time[cfg.eval_length], end_time[cfg.eval_length];
-	
-	int begin_timing = cfg.test_length - cfg.eval_length + 1;
-
-	float* query_buffer = new float[cfg.test_length * cfg.d];
-	float* to_be_deleted = query_buffer;
-
-	int queries_in_buffer = 0;
-	int qn = 0;
-	
-	bool first = true;
-	
-	while (true) {
-		auto [id, query_time] = next_query(cfg.test_length, cfg.nq);
-		
-		if (id == -1) {
-			continue;
-		}
-			
-		if (id == -2) {
-			if (queries_in_buffer >= 1) send_queries(nshards, query_buffer, queries_in_buffer, cfg.d);
-			break;
-		}
-
-		qn++;
-		
-		if (qn >= begin_timing) {
-			int offset = qn - begin_timing;
-			start_time[offset] = query_time;
-		}
-		
-		memcpy(query_buffer + queries_in_buffer * cfg.d, xq + id * cfg.d, cfg.d * sizeof(float));
-		queries_in_buffer++;
-
-		if (queries_in_buffer < cfg.block_size) continue;
-
-		
-		if (first) {
-			first = false;
-			deb("First block sent");
-		}
-		send_queries(nshards, query_buffer, queries_in_buffer, cfg.d);
-		
-		query_buffer = query_buffer + queries_in_buffer * cfg.d;
-		queries_in_buffer = 0;
-	}
-
-	send_finished_signal(nshards);
-	
-	MPI_Recv(end_time, cfg.eval_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
-			MPI_STATUS_IGNORE);
-
-	double total = 0;
-
-	for (int i = 0; i < cfg.eval_length; i++) {
-		total += end_time[i] - start_time[i];
-	}
-
-	std::printf("%lf\n", total / cfg.eval_length);
-	
-	delete [] to_be_deleted;
-	delete [] xq;
-}
-
-void generator(int nshards, ProcType ptype, Config& cfg) {
-	int shards_ready = 0;
-	
-	//Waiting for search nodes to be ready
-	while (shards_ready < nshards) {
-		float dummy;
-		MPI_Recv(&dummy, 1, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		shards_ready++;
-	}
-
-	if (ptype == ProcType::Bench) bench_generator(3000 / 20, cfg.block_size, nshards, cfg);
-	else single_block_size_generator(nshards, cfg);
-}
-
 inline double _search(faiss::Index* index, int nq, float* queries, float* D, faiss::Index::idx_t* I, Config& cfg) {
-	double before = elapsed();
+	double before = now();
 	if (nq > 0) index->search(nq, queries, cfg.k, D, I);
-	double after = elapsed();
+	double after = now();
 	
 	return after - before;
 }
@@ -620,7 +316,7 @@ int bsearch(int min, int max, double* data, double val) {
 	else return min;
 }
 
-int numBlocksRequired(ProcType ptype, QueryBuffer& buffer, ProfileData& pdGPU) {
+int numBlocksRequired(ProcType ptype, QueryBuffer& buffer, ProfileData& pdGPU, Config& cfg) {
 	switch (ptype) {
 		case ProcType::Dynamic: {
 			buffer.waitForData(1);
@@ -639,7 +335,7 @@ int numBlocksRequired(ProcType ptype, QueryBuffer& buffer, ProfileData& pdGPU) {
 			return num_blocks;
 		}
 		case ProcType::Static: {
-			return processing_size;
+			return cfg.processing_size;
 		}
 		case ProcType::Bench: {
 			static int nrepeats = 0;
@@ -675,7 +371,7 @@ std::pair<int, int> computeSplitCPU_GPU(ProcType ptype, QueryBuffer& buffer, int
 		}
 		case ProcType::Static: {
 			int nq = num_blocks * cfg.block_size;
-			nq_gpu = static_cast<int>(nq * gpu_slice);
+			nq_gpu = static_cast<int>(nq * cfg.gpu_slice);
 			nq_cpu = nq - nq_gpu;
 			
 			break;
@@ -766,7 +462,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	std::thread receiver { query_receiver, &buffer, &finished, std::ref(cfg) };
 	
 	while (! finished || buffer.entries() >= 1) {
-		int num_blocks = numBlocksRequired(ptype, buffer, pdGPU);
+		int num_blocks = numBlocksRequired(ptype, buffer, pdGPU, cfg);
 		auto [nq_cpu, nq_gpu] = computeSplitCPU_GPU(ptype, buffer, num_blocks, pdGPU, pdCPU, cfg);
 		
 		int remaining_blocks = (cfg.test_length - qn) / 20;
@@ -970,7 +666,7 @@ void aggregator(int nshards, ProcType ptype, Config& cfg) {
 			qn++;
 			
 			if (end_times.size() >= cfg.eval_length) end_times.pop_front();
-			end_times.push_back(elapsed());
+			end_times.push_back(now());
 		}
 	}
 	
