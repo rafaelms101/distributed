@@ -890,7 +890,7 @@ void send_times(std::deque<double>& end_times, int eval_length) {
 void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 	auto gt = load_gt(cfg);
 
-	int n_1 = 0, n_10 = 0;
+	int n_1 = 0, n_10 = 0, n_100 = 0;
 	
 	for (int i = cfg.test_length - cfg.eval_length; i < cfg.test_length; i++) {
 		int answer_id = i % cfg.eval_length;
@@ -901,12 +901,14 @@ void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 			if (answers[answer_id * cfg.k + j] == gt_nn) {
 				if (j < 1) n_1++;
 				if (j < 10) n_10++;
+				if (j < 100) n_100++;
 			}
 		}
 	}
 
 	printf("R@1 = %.4f\n", n_1 / float(cfg.eval_length));
 	printf("R@10 = %.4f\n", n_10 / float(cfg.eval_length));
+	printf("R@100 = %.4f\n", n_100 / float(cfg.eval_length));
 	
 	delete [] gt;
 }
