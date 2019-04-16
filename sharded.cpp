@@ -158,45 +158,36 @@ int *ivecs_read(const char *fname, int *d_out, int *n_out)
     return (int*)fvecs_read(fname, d_out, n_out);
 }
 
-int main(int argc, char* argv[]) {
-	// Initialize the MPI environment
-	int provided;
-	MPI_Init_thread(nullptr, nullptr, MPI_THREAD_MULTIPLE, &provided);
-	assert(provided == MPI_THREAD_MULTIPLE);
-	
-	// Get the rank of the process
-	int world_rank;
-	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-	
+ProcType handle_parameters(int argc, char* argv[]) {
 	std::string usage = "./sharded b | d <qr> | s <qr> <num_blocks> <gpu_slice>";
 
 	if (argc < 2) {
-		if (world_rank == 0) std::printf("Wrong arguments.\n%s\n", usage.c_str());
+		std::printf("Wrong arguments.\n%s\n", usage.c_str());
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
-	
-	ProcType ptype; 
-	if (! strcmp("d", argv[1])) ptype = ProcType::Dynamic;
-	else if (! strcmp("b", argv[1])) ptype = ProcType::Bench;
-	else if (! strcmp("s", argv[1])) ptype = ProcType::Static;
+
+	ProcType ptype;
+	if (!strcmp("d", argv[1])) ptype = ProcType::Dynamic;
+	else if (!strcmp("b", argv[1])) ptype = ProcType::Bench;
+	else if (!strcmp("s", argv[1])) ptype = ProcType::Static;
 	else {
-		if (world_rank == 0) std::printf("Invalid processing type.Expected b | s | d\n");
+		std::printf("Invalid processing type.Expected b | s | d\n");
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 
 	if (ptype == ProcType::Dynamic) {
 		if (argc != 3) {
-			if (world_rank == 0) std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			MPI_Abort(MPI_COMM_WORLD, -1);
 		}
-		
+
 		query_rate = atof(argv[2]);
 	} else if (ptype == ProcType::Static) {
 		if (argc != 5) {
-			if (world_rank == 0) std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			MPI_Abort(MPI_COMM_WORLD, -1);
 		}
-		
+
 		query_rate = atof(argv[2]);
 		processing_size = atoi(argv[3]);
 		gpu_slice = atof(argv[4]);
@@ -205,6 +196,19 @@ int main(int argc, char* argv[]) {
 	} else if (ptype == ProcType::Bench) {
 		gpu_slice = 0.5;
 	}
+
+	return ptype;
+}
+
+int main(int argc, char* argv[]) {
+	int provided;
+	MPI_Init_thread(nullptr, nullptr, MPI_THREAD_MULTIPLE, &provided);
+	assert(provided == MPI_THREAD_MULTIPLE);
+	
+	int world_rank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+	
+	ProcType ptype = handle_parameters(argc,argv);
 
     // Get the number of processes
     int world_size;
@@ -253,6 +257,33 @@ float* load_queries() {
 	return xq;
 }
 
+
+double fast_slow_fast_interval() {
+	constexpr double slow_time = 0.001;
+	constexpr double fast_time = 0.0001;
+	constexpr double delta_time = (slow_time - fast_time) / (eval_length / 2);
+
+	static bool going_up = false;
+	static double curr_time = slow_time;
+
+	if (going_up) {
+		curr_time = curr_time + delta_time;
+	} else {
+		curr_time = curr_time - delta_time;
+	}
+
+	if (curr_time > slow_time) {
+		deb("Now going up in speed");
+		curr_time = slow_time - delta_time;
+		going_up = ! going_up;
+	} else if (curr_time < fast_time) {
+		deb("Now going down in speed");
+		curr_time = fast_time + delta_time;
+		going_up = ! going_up;
+	}
+
+	return curr_time;
+}
 
 double next_query_interval() {
 	return constant_interval(query_rate);
@@ -316,8 +347,7 @@ void single_block_size_generator(int nshards, int block_size) {
 	
 	float* xq = load_queries();
 
-	double end_time[eval_length];
-	double start_time[eval_length];
+	double start_time[eval_length], end_time[eval_length];
 	
 	int begin_timing = test_length - eval_length + 1;
 
@@ -325,7 +355,6 @@ void single_block_size_generator(int nshards, int block_size) {
 	float* to_be_deleted = query_buffer;
 
 	int queries_in_buffer = 0;
-
 	int qn = 0;
 	
 	bool first = true;
@@ -338,10 +367,7 @@ void single_block_size_generator(int nshards, int block_size) {
 		}
 			
 		if (id == -2) {
-			if (queries_in_buffer >= 1) {
-				send_queries(nshards, query_buffer, queries_in_buffer);
-			}
-
+			if (queries_in_buffer >= 1) send_queries(nshards, query_buffer, queries_in_buffer);
 			break;
 		}
 
@@ -581,6 +607,119 @@ int bsearch(int min, int max, double* data, double val) {
 	else return min;
 }
 
+int numBlocksRequired(ProcType ptype, QueryBuffer& buffer, ProfileData& pdGPU) {
+	switch (ptype) {
+		case ProcType::Dynamic: {
+			buffer.waitForData(1);
+			
+			int num_blocks = buffer.entries();
+			
+			if (num_blocks < pdGPU.min_block) {
+				double work_without_waiting = num_blocks / pdGPU.times[num_blocks];
+				double work_with_waiting = (pdGPU.min_block - num_blocks) * buffer.block_rate() + pdGPU.times[pdGPU.min_block];
+
+				if (work_with_waiting > work_without_waiting) {
+					usleep((pdGPU.min_block - num_blocks) * buffer.block_rate() * 1000000);
+				}
+			}
+
+			return num_blocks;
+		}
+		case ProcType::Static: {
+			return processing_size;
+		}
+		case ProcType::Bench: {
+			static int nrepeats = 0;
+			static int nb = 1;
+
+			if (nrepeats >= bench_repeats) {
+				nrepeats = 0;
+				nb++;
+			}
+
+			nrepeats++;
+			return nb * 2;
+		}
+	}
+}
+
+std::pair<int, int> computeSplitCPU_GPU(ProcType ptype, QueryBuffer& buffer, int num_blocks, ProfileData& pdGPU, ProfileData& pdCPU) {
+	int nq_cpu, nq_gpu;
+	
+	switch (ptype) {
+		case ProcType::Dynamic: {
+			int bgpu = std::min(num_blocks, pdGPU.max_block);
+			int bcpu = std::min(num_blocks - bgpu, pdCPU.max_block);
+
+			if (bcpu > 0) bcpu = bsearch(0, bcpu, pdCPU.times, pdGPU.times[pdGPU.max_block]);
+			nq_cpu = bcpu * block_size;
+			
+			if (nq_cpu != 0) deb("%d CPU queries", nq_cpu);
+			
+			nq_gpu = bgpu * block_size;
+
+			break;
+		}
+		case ProcType::Static: {
+			int nq = num_blocks * block_size;
+			nq_gpu = static_cast<int>(nq * gpu_slice);
+			nq_cpu = nq - nq_gpu;
+			
+			break;
+		}
+		case ProcType::Bench: {
+			nq_cpu = num_blocks / 2 * block_size;
+			nq_gpu = nq_cpu;
+
+			break;
+		}
+	}
+	
+	return std::make_pair(nq_cpu, nq_gpu);
+}
+
+void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_index, int nq_cpu, int nq_gpu, QueryBuffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesGpu, std::vector<double>& procTimesCpu) {
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+	
+	//now we proccess our query buffer
+	if (ptype == ProcType::Bench) {
+		static bool gpu_finished = false;
+		static bool cpu_finished = false;
+
+		std::future<double> future_time_spent;
+		if (! gpu_finished) {
+			future_time_spent = std::async(std::launch::async, _search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu);
+		}
+
+		if (! cpu_finished) {
+			auto time_spent = _search(cpu_index, nq_cpu, query_buffer, D, I);
+			procTimesCpu.push_back(time_spent);
+
+			if (time_spent >= 1) {
+				cpu_finished = true;
+				deb("Stopped benching CPU at %d", nq_cpu);
+			}
+		}
+
+		if (! gpu_finished) {
+			auto time_spent = future_time_spent.get();
+			procTimesGpu.push_back(time_spent);
+
+			if (time_spent >= 1) {
+				gpu_finished = true;
+				deb("Stopped benching GPU at %d", nq_gpu);
+			}
+		}
+	} else {
+		auto future = std::async(std::launch::async, _search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu);
+		_search(cpu_index, nq_cpu, query_buffer, D, I);
+		future.get();
+	}
+
+	int nqueries = nq_cpu + nq_gpu;
+	buffer.consume(nqueries / block_size);
+			
+}
 
 void search(int shard, int nshards, ProcType ptype) {
 	std::vector<double> procTimesGpu;
@@ -596,11 +735,10 @@ void search(int shard, int nshards, ProcType ptype) {
 	QueryBuffer buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
 	
 	faiss::gpu::StandardGpuResources res;
+	res.setTempMemoryFraction(0.14);
 
 	auto cpu_index = load_index(shard, nshards);
-	deb("Converting to gpu index");
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
-	deb("Converted to gpu index");
 	
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[test_length * k];
 	float* D = new float[test_length * k];
@@ -615,113 +753,16 @@ void search(int shard, int nshards, ProcType ptype) {
 	std::thread receiver { query_receiver, &buffer, &finished };
 	
 	while (! finished || buffer.entries() >= 1) {
-		int num_blocks;
-		int nq_cpu, nq_gpu;
+		int num_blocks = numBlocksRequired(ptype, buffer, pdGPU);
+		auto [nq_cpu, nq_gpu] = computeSplitCPU_GPU(ptype, buffer, num_blocks, pdGPU, pdCPU);
 		
-		switch (ptype) {
-		case ProcType::Dynamic: {
-			buffer.waitForData(1);
-			num_blocks = buffer.entries();
-
-			if (num_blocks < pdGPU.min_block) {
-				double work_without_waiting = num_blocks / pdGPU.times[num_blocks];
-				double work_with_waiting = (pdGPU.min_block - num_blocks)
-						* buffer.block_rate() + pdGPU.times[pdGPU.min_block];
-
-				if (work_with_waiting > work_without_waiting) {
-					usleep((pdGPU.min_block - num_blocks) * buffer.block_rate() * 1000000);
-				}
-			}
-
-			num_blocks = buffer.entries();
-			int bgpu = std::min(num_blocks, pdGPU.max_block);
-			int bcpu = std::min(num_blocks - bgpu, pdCPU.max_block);
-			
-			if (bcpu > 0) {
-				bcpu = bsearch(0, bcpu, pdCPU.times, pdGPU.times[pdGPU.max_block]);
-			}
-			
-			nq_cpu = bcpu * block_size;
-			if (nq_cpu != 0) deb("%d CPU queries", nq_cpu);
-			nq_gpu = bgpu * block_size;
-			
-			break;
-		}
-		case ProcType::Static: {
-			assert((test_length - qn) % 20 == 0);
-			num_blocks = processing_size;
-			int nq = num_blocks * block_size;
-			nq_gpu = static_cast<int>(nq * gpu_slice);
-			nq_cpu = nq - nq_gpu; 
-			break;
-		}
-		case ProcType::Bench: {
-			static int nrepeats = 0;
-			static int nb = 1;
-
-			if (nrepeats >= bench_repeats) {
-				nrepeats = 0;
-				nb++;
-			}
-
-			nrepeats++;
-			num_blocks = nb * 2;
-			nq_cpu = nb * block_size;
-			nq_gpu = nq_cpu;
-			
-			break;
-		}
-		}
+		int remaining_blocks = (test_length - qn) / 20;
+		buffer.waitForData(std::min(num_blocks, remaining_blocks));
 		
-		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, (test_length - qn) / 20);
-		buffer.waitForData(num_blocks);
-		
-		//TODO: this is wrong since the buffer MIGHT not be continuous.
-		float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
-//		int nqueries = num_blocks * block_size;
-		
-		deb("Search node processing %d queries", nq_cpu + nq_gpu);
+		deb("Processing %d queries", nq_cpu + nq_gpu);
+		process_buffer(ptype, cpu_index, gpu_index, nq_cpu, nq_gpu, buffer, I, D, procTimesGpu, procTimesCpu); 
 
-		//now we proccess our query buffer
-		if (ptype == ProcType::Bench) {
-			static bool gpu_finished = false;
-			static bool cpu_finished = false;
-			
-			std::future<double> future_time_spent;
-			if (! gpu_finished) {
-				deb("Before gpu call");
-				future_time_spent = std::async(std::launch::async, _search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu);
-				deb("After gpu call");
-			}
-			
-			if (! cpu_finished) {
-				auto time_spent = _search(cpu_index, nq_cpu, query_buffer, D, I);
-				procTimesCpu.push_back(time_spent);
-				
-				if (time_spent >= 1) {
-					cpu_finished = true;
-					deb("Stopped benching CPU at %d", nq_cpu);
-				}
-			}
-			
-			if (! gpu_finished) {
-				auto time_spent = future_time_spent.get();
-				procTimesGpu.push_back(time_spent);
-				
-				if (time_spent >= 1) {
-					gpu_finished = true;
-					deb("Stopped benching GPU at %d", nq_gpu);
-				}
-			}
-		} else {
-			auto future = std::async(std::launch::async, _search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu);
-			_search(cpu_index, nq_cpu, query_buffer, D, I);
-			future.get();
-		}
-		
-		buffer.consume(num_blocks);
-
-		int nqueries = num_blocks * block_size;
+		int nqueries = nq_cpu + nq_gpu;
 		
 		//TODO: Optimize this to an Immediate Synchronous Send
 		//TODO: Merge these two sends into one
@@ -821,6 +862,17 @@ faiss::Index::idx_t* load_gt() {
 	return gt;
 }
 
+void send_times(std::deque<double>& end_times) {
+	double end_times_array[eval_length];
+
+	for (int i = 0; i < eval_length; i++) {
+		end_times_array[i] = end_times.front();
+		end_times.pop_front();
+	}
+
+	MPI_Send(end_times_array, eval_length, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
+}
+
 void aggregator(int nshards, ProcType ptype) {
 	std::deque<double> end_times;
 
@@ -883,35 +935,7 @@ void aggregator(int nshards, ProcType ptype) {
 		}
 	}
 	
-	if (ptype != ProcType::Bench) {
-		int n_1 = 0, n_10 = 0, n_100 = 0;
-		for (int i = 0; i < 10000; i++) {
-			int gt_nn = gt[i * k];
-			for (int j = 0; j < k; j++) {
-				if (answers[i * k + j] == gt_nn) {
-					if (j < 1)
-						n_1++;
-					if (j < 10)
-						n_10++;
-					if (j < 100)
-						n_100++;
-				}
-			}
-		}
-
-		printf("R@1 = %.4f\n", n_1 / float(NQ));
-		printf("R@10 = %.4f\n", n_10 / float(NQ));
-		printf("R@100 = %.4f\n", n_100 / float(NQ));
-		
-		double end_times_array[eval_length];
-
-		for (int i = 0; i < eval_length; i++) {
-			end_times_array[i] = end_times.front();
-			end_times.pop_front();
-		}
-
-		MPI_Send(end_times_array, eval_length, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
-	}
+	if (ptype != ProcType::Bench) send_times(end_times);
 	
 	delete [] gt;
 	
