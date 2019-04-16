@@ -48,19 +48,18 @@
 
 char src_path[] = "/home/rafael/mestrado/bigann/";
 
-#define NQ 10000
-
-constexpr int test_length = 100000;
-constexpr int eval_length = 50000;
-
-int d = 128;
-int k = 10;
-int nb = 1000000; 
-int ncentroids = 256; 
-int m = 8;
-int nprobe = 4;
-
-const int block_size = 20;
+struct Config {
+	int d;
+	int nb;
+	int ncentroids;
+	int m;
+	int k;
+	int nprobe;
+	int block_size;
+	int test_length;
+	int eval_length;
+	int nq;
+};
 
 int processing_size;
 double gpu_slice = 1;
@@ -70,10 +69,10 @@ constexpr int bench_repeats = 3;
 
 enum class ProcType {Static, Dynamic, Bench};
 
-void generator(int nshards, ProcType ptype);
-void single_block_size_generator(int nshards, int block_size);
-void aggregator(int nshards, ProcType ptype);
-void search(int shard, int nshards, ProcType ptype);
+void generator(int nshards, ProcType ptype, Config& cfg);
+void single_block_size_generator(int nshards, int block_size, Config& cfg);
+void aggregator(int nshards, ProcType ptype, Config& cfg);
+void search(int shard, int nshards, ProcType ptype, Config& cfg);
 
 
 
@@ -200,7 +199,25 @@ ProcType handle_parameters(int argc, char* argv[]) {
 	return ptype;
 }
 
+Config inline loadConfig() {
+	Config cfg; 
+	cfg.d = 128;
+	cfg.nb = 500000000;
+	cfg.ncentroids = 8192;
+	cfg.m = 8;
+	cfg.k = 10;
+	cfg.nprobe = 8;
+	cfg.block_size = 20;
+	cfg.test_length = 100000;
+	cfg.eval_length = 50000;
+	cfg.nq = 10000;
+	
+	return cfg;
+}
+
 int main(int argc, char* argv[]) {
+	Config cfg = loadConfig();
+	
 	int provided;
 	MPI_Init_thread(nullptr, nullptr, MPI_THREAD_MULTIPLE, &provided);
 	assert(provided == MPI_THREAD_MULTIPLE);
@@ -226,11 +243,11 @@ int main(int argc, char* argv[]) {
     
 
     if (world_rank == 1) {
-    	generator(world_size - 2, ptype);
+    	generator(world_size - 2, ptype, cfg);
     } else if (world_rank == 0) {
-    	aggregator(world_size - 2, ptype);
+    	aggregator(world_size - 2, ptype, cfg);
     } else {
-    	search(world_rank - 2, world_size - 2, ptype);
+    	search(world_rank - 2, world_size - 2, ptype, cfg);
     }
     
     // Finalize the MPI environment.
@@ -241,7 +258,7 @@ double constant_interval(double val) {
 	return val;
 }
 
-float* load_queries() {
+float* load_queries(int d, int nq) {
 	char query_path[500];
 	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
 
@@ -251,17 +268,17 @@ float* load_queries() {
 	//loading queries
 	size_t fz;
 	unsigned char* queries = bvecs_read(query_path, &fz);
-	float* xq = to_float_array(queries, NQ, d);
+	float* xq = to_float_array(queries, nq, d);
 	munmap(queries, fz);
 	
 	return xq;
 }
 
 
-double fast_slow_fast_interval() {
+double fast_slow_fast_interval(int eval_length) {
 	constexpr double slow_time = 0.001;
 	constexpr double fast_time = 0.0001;
-	constexpr double delta_time = (slow_time - fast_time) / (eval_length / 2);
+	double delta_time = (slow_time - fast_time) / (eval_length / 2);
 
 	static bool going_up = false;
 	static double curr_time = slow_time;
@@ -289,7 +306,7 @@ double next_query_interval() {
 	return constant_interval(query_rate);
 }
 
-std::pair<int, double> next_query() {
+std::pair<int, double> next_query(int test_length, int nq) {
 	static int qty = 0;
 	static double query_time = elapsed();
 	
@@ -308,12 +325,11 @@ std::pair<int, double> next_query() {
 		deb("Sent %d/%d queries", qty, test_length);
 	}
 	
-	return {(qty - 1) % NQ, old_time}; 
+	return {(qty - 1) % nq, old_time}; 
 }
 
-void send_queries(int nshards, float* query_buffer, int queries_in_buffer) {
+void send_queries(int nshards, float* query_buffer, int queries_in_buffer, int d) {
 	for (int node = 0; node < nshards; node++) {
-		assert(queries_in_buffer == block_size);
 		MPI_Ssend(query_buffer, queries_in_buffer * d, MPI_FLOAT, node + 2, 0, MPI_COMM_WORLD);
 	}
 }
@@ -325,15 +341,15 @@ void send_finished_signal(int nshards) {
 	}
 }
 
-void bench_generator(int num_blocks, int block_size, int nshards) {
-	assert(num_blocks * block_size <= NQ);
+void bench_generator(int num_blocks, int block_size, int nshards, Config& cfg) {
+	assert(num_blocks * block_size <= cfg.nq);
 
-	float* xq = load_queries();
+	float* xq = load_queries(cfg.d, cfg.nq);
 
 	for (int i = 1; i <= num_blocks; i++) {
 		for (int repeats = 1; repeats <= bench_repeats; repeats++) {
 			for (int b = 1; b <= i * 2; b++) {
-				send_queries(nshards, xq, block_size);
+				send_queries(nshards, xq, cfg.block_size, cfg.d);
 			}
 		}
 	}
@@ -342,16 +358,16 @@ void bench_generator(int num_blocks, int block_size, int nshards) {
 }
 
 
-void single_block_size_generator(int nshards, int block_size) {
-	assert(test_length % block_size == 0);
+void single_block_size_generator(int nshards, Config& cfg) {
+	assert(cfg.test_length % cfg.block_size == 0);
 	
-	float* xq = load_queries();
+	float* xq = load_queries(cfg.d, cfg.nq);
 
-	double start_time[eval_length], end_time[eval_length];
+	double start_time[cfg.eval_length], end_time[cfg.eval_length];
 	
-	int begin_timing = test_length - eval_length + 1;
+	int begin_timing = cfg.test_length - cfg.eval_length + 1;
 
-	float* query_buffer = new float[test_length * d];
+	float* query_buffer = new float[cfg.test_length * cfg.d];
 	float* to_be_deleted = query_buffer;
 
 	int queries_in_buffer = 0;
@@ -360,14 +376,14 @@ void single_block_size_generator(int nshards, int block_size) {
 	bool first = true;
 	
 	while (true) {
-		auto [id, query_time] = next_query();
+		auto [id, query_time] = next_query(cfg.test_length, cfg.nq);
 		
 		if (id == -1) {
 			continue;
 		}
 			
 		if (id == -2) {
-			if (queries_in_buffer >= 1) send_queries(nshards, query_buffer, queries_in_buffer);
+			if (queries_in_buffer >= 1) send_queries(nshards, query_buffer, queries_in_buffer, cfg.d);
 			break;
 		}
 
@@ -378,40 +394,40 @@ void single_block_size_generator(int nshards, int block_size) {
 			start_time[offset] = query_time;
 		}
 		
-		memcpy(query_buffer + queries_in_buffer * d, xq + id * d, d * sizeof(float));
+		memcpy(query_buffer + queries_in_buffer * cfg.d, xq + id * cfg.d, cfg.d * sizeof(float));
 		queries_in_buffer++;
 
-		if (queries_in_buffer < block_size) continue;
+		if (queries_in_buffer < cfg.block_size) continue;
 
 		
 		if (first) {
 			first = false;
 			deb("First block sent");
 		}
-		send_queries(nshards, query_buffer, queries_in_buffer);
+		send_queries(nshards, query_buffer, queries_in_buffer, cfg.d);
 		
-		query_buffer = query_buffer + queries_in_buffer * d;
+		query_buffer = query_buffer + queries_in_buffer * cfg.d;
 		queries_in_buffer = 0;
 	}
 
 	send_finished_signal(nshards);
 	
-	MPI_Recv(end_time, eval_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
+	MPI_Recv(end_time, cfg.eval_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
 			MPI_STATUS_IGNORE);
 
 	double total = 0;
 
-	for (int i = 0; i < eval_length; i++) {
+	for (int i = 0; i < cfg.eval_length; i++) {
 		total += end_time[i] - start_time[i];
 	}
 
-	std::printf("%lf\n", total / eval_length);
+	std::printf("%lf\n", total / cfg.eval_length);
 	
 	delete [] to_be_deleted;
 	delete [] xq;
 }
 
-void generator(int nshards, ProcType ptype) {
+void generator(int nshards, ProcType ptype, Config& cfg) {
 	int shards_ready = 0;
 	
 	//Waiting for search nodes to be ready
@@ -421,19 +437,19 @@ void generator(int nshards, ProcType ptype) {
 		shards_ready++;
 	}
 
-	if (ptype == ProcType::Bench) bench_generator(3000 / 20, block_size, nshards);
-	else single_block_size_generator(nshards, block_size);
+	if (ptype == ProcType::Bench) bench_generator(3000 / 20, cfg.block_size, nshards, cfg);
+	else single_block_size_generator(nshards, cfg);
 }
 
-inline double _search(faiss::Index* index, int nq, float* queries, float* D, faiss::Index::idx_t* I) {
+inline double _search(faiss::Index* index, int nq, float* queries, float* D, faiss::Index::idx_t* I, Config& cfg) {
 	double before = elapsed();
-	if (nq > 0) index->search(nq, queries, k, D, I);
+	if (nq > 0) index->search(nq, queries, cfg.k, D, I);
 	double after = elapsed();
 	
 	return after - before;
 }
 
-void query_receiver(QueryBuffer* buffer, bool* finished) {
+void query_receiver(QueryBuffer* buffer, bool* finished, Config& cfg) {
 	deb("Receiver");
 	int queries_received = 0;
 	
@@ -458,23 +474,23 @@ void query_receiver(QueryBuffer* buffer, bool* finished) {
 		while (! buffer->hasSpace());
 
 		float* recv_data = reinterpret_cast<float*>(buffer->peekEnd());
-		MPI_Recv(recv_data, block_size * d, MPI_FLOAT, GENERATOR, 0,
+		MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0,
 				MPI_COMM_WORLD, &status);
 		buffer->add();
 
 		assert(status.MPI_ERROR == MPI_SUCCESS);
 
-		queries_received += block_size;
+		queries_received += cfg.block_size;
 	}
 	
 	deb("Finished receiving queries");
 }
 
-auto load_index(int shard, int nshards) {
+auto load_index(int shard, int nshards, Config& cfg) {
 	deb("Started loading");
 
 	char index_path[500];
-	sprintf(index_path, "index/index_%d_%d_%d", nb, ncentroids, m);
+	sprintf(index_path, "index/index_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m);
 
 	deb("Loading file: %s", index_path);
 
@@ -483,7 +499,8 @@ auto load_index(int shard, int nshards) {
 
 	deb("Ended loading");
 
-	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = nprobe;
+	//TODO: Maybe we shouldnt set nprobe here
+	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = cfg.nprobe;
 	return cpu_index;
 }
 
@@ -495,14 +512,14 @@ struct ProfileData {
 	int max_block;
 };
 
-ProfileData getProfilingData(bool cpu) {	
+ProfileData getProfilingData(bool cpu, Config& cfg) {	
 	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", nb, ncentroids, m, k, nprobe, block_size, cpu ? "cpu" : "gpu");
+	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, cpu ? "cpu" : "gpu");
 	std::ifstream file;
 	file.open(file_path);
 	
 	if (! file.good()) {
-		std::printf("File prof/%d_%d_%d_%d_%d_%d_%s", nb, ncentroids, m, k, nprobe, block_size, cpu ? "cpu" : "gpu");
+		std::printf("File prof/%d_%d_%d_%d_%d_%d_%s", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, cpu ? "cpu" : "gpu");
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 
@@ -551,10 +568,7 @@ ProfileData getProfilingData(bool cpu) {
 		while (time_per_block[nb] > threshold)
 			nb--;
 		pd.max_block = nb;
-
-		deb("min: %d, max: %d", pd.min_block * block_size,
-				pd.max_block * block_size);
-
+		
 		pd.times = new double[minBlock + 1];
 		pd.times[0] = 0;
 		for (int nb = 1; nb <= minBlock; nb++) pd.times[nb] = time_per_block[nb];
@@ -564,10 +578,10 @@ ProfileData getProfilingData(bool cpu) {
 }
 
 
-void store_profile_data(const char* type, std::vector<double>& procTimes) {
+void store_profile_data(const char* type, std::vector<double>& procTimes, Config& cfg) {
 	//now we write the time data on a file
 	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", nb, ncentroids, m, k, nprobe, block_size, type);
+	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, type);
 	std::ofstream file;
 	file.open(file_path);
 
@@ -643,7 +657,7 @@ int numBlocksRequired(ProcType ptype, QueryBuffer& buffer, ProfileData& pdGPU) {
 	}
 }
 
-std::pair<int, int> computeSplitCPU_GPU(ProcType ptype, QueryBuffer& buffer, int num_blocks, ProfileData& pdGPU, ProfileData& pdCPU) {
+std::pair<int, int> computeSplitCPU_GPU(ProcType ptype, QueryBuffer& buffer, int num_blocks, ProfileData& pdGPU, ProfileData& pdCPU, Config& cfg) {
 	int nq_cpu, nq_gpu;
 	
 	switch (ptype) {
@@ -652,23 +666,23 @@ std::pair<int, int> computeSplitCPU_GPU(ProcType ptype, QueryBuffer& buffer, int
 			int bcpu = std::min(num_blocks - bgpu, pdCPU.max_block);
 
 			if (bcpu > 0) bcpu = bsearch(0, bcpu, pdCPU.times, pdGPU.times[pdGPU.max_block]);
-			nq_cpu = bcpu * block_size;
+			nq_cpu = bcpu * cfg.block_size;
 			
 			if (nq_cpu != 0) deb("%d CPU queries", nq_cpu);
 			
-			nq_gpu = bgpu * block_size;
+			nq_gpu = bgpu * cfg.block_size;
 
 			break;
 		}
 		case ProcType::Static: {
-			int nq = num_blocks * block_size;
+			int nq = num_blocks * cfg.block_size;
 			nq_gpu = static_cast<int>(nq * gpu_slice);
 			nq_cpu = nq - nq_gpu;
 			
 			break;
 		}
 		case ProcType::Bench: {
-			nq_cpu = num_blocks / 2 * block_size;
+			nq_cpu = num_blocks / 2 * cfg.block_size;
 			nq_gpu = nq_cpu;
 
 			break;
@@ -678,7 +692,7 @@ std::pair<int, int> computeSplitCPU_GPU(ProcType ptype, QueryBuffer& buffer, int
 	return std::make_pair(nq_cpu, nq_gpu);
 }
 
-void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_index, int nq_cpu, int nq_gpu, QueryBuffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesGpu, std::vector<double>& procTimesCpu) {
+void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_index, int nq_cpu, int nq_gpu, QueryBuffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesGpu, std::vector<double>& procTimesCpu, Config& cfg) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	
 	//now we proccess our query buffer
@@ -688,11 +702,11 @@ void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_i
 
 		std::future<double> future_time_spent;
 		if (! gpu_finished) {
-			future_time_spent = std::async(std::launch::async, _search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu);
+			future_time_spent = std::async(std::launch::async, _search, gpu_index, nq_gpu, query_buffer + nq_cpu * cfg.d, D + cfg.k * nq_cpu, I + cfg.k * nq_cpu, std::ref(cfg));
 		}
 
 		if (! cpu_finished) {
-			auto time_spent = _search(cpu_index, nq_cpu, query_buffer, D, I);
+			auto time_spent = _search(cpu_index, nq_cpu, query_buffer, D, I, cfg);
 			procTimesCpu.push_back(time_spent);
 
 			if (time_spent >= 1) {
@@ -711,63 +725,63 @@ void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_i
 			}
 		}
 	} else {
-		auto future = std::async(std::launch::async, _search, gpu_index, nq_gpu, query_buffer + nq_cpu * d, D + k * nq_cpu, I + k * nq_cpu);
-		_search(cpu_index, nq_cpu, query_buffer, D, I);
+		auto future = std::async(std::launch::async, _search, gpu_index, nq_gpu, query_buffer + nq_cpu * cfg.d, D + cfg.k * nq_cpu, I + cfg.k * nq_cpu, std::ref(cfg));
+		_search(cpu_index, nq_cpu, query_buffer, D, I, cfg);
 		future.get();
 	}
 
 	int nqueries = nq_cpu + nq_gpu;
-	buffer.consume(nqueries / block_size);
+	buffer.consume(nqueries / cfg.block_size);
 			
 }
 
-void search(int shard, int nshards, ProcType ptype) {
+void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	std::vector<double> procTimesGpu;
 	std::vector<double> procTimesCpu;
 	
 	ProfileData pdGPU, pdCPU; 
 	if (ptype == ProcType::Dynamic) {
-		pdCPU = getProfilingData(true);
-		pdGPU = getProfilingData(false);
+		pdCPU = getProfilingData(true, cfg);
+		pdGPU = getProfilingData(false, cfg);
 	}
 
-	const long block_size_in_bytes = sizeof(float) * d * block_size;
+	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	QueryBuffer buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
 	
 	faiss::gpu::StandardGpuResources res;
 	res.setTempMemoryFraction(0.14);
 
-	auto cpu_index = load_index(shard, nshards);
+	auto cpu_index = load_index(shard, nshards, cfg);
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
 	
-	faiss::Index::idx_t* I = new faiss::Index::idx_t[test_length * k];
-	float* D = new float[test_length * k];
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.test_length * cfg.k];
+	float* D = new float[cfg.test_length * cfg.k];
 	
 	deb("Search node is ready");
 	
-	assert(test_length % block_size == 0);
+	assert(cfg.test_length % cfg.block_size == 0);
 
 	int qn = 0;
 	bool finished = false;
 	
-	std::thread receiver { query_receiver, &buffer, &finished };
+	std::thread receiver { query_receiver, &buffer, &finished, std::ref(cfg) };
 	
 	while (! finished || buffer.entries() >= 1) {
 		int num_blocks = numBlocksRequired(ptype, buffer, pdGPU);
-		auto [nq_cpu, nq_gpu] = computeSplitCPU_GPU(ptype, buffer, num_blocks, pdGPU, pdCPU);
+		auto [nq_cpu, nq_gpu] = computeSplitCPU_GPU(ptype, buffer, num_blocks, pdGPU, pdCPU, cfg);
 		
-		int remaining_blocks = (test_length - qn) / 20;
+		int remaining_blocks = (cfg.test_length - qn) / 20;
 		buffer.waitForData(std::min(num_blocks, remaining_blocks));
 		
 		deb("Processing %d queries", nq_cpu + nq_gpu);
-		process_buffer(ptype, cpu_index, gpu_index, nq_cpu, nq_gpu, buffer, I, D, procTimesGpu, procTimesCpu); 
+		process_buffer(ptype, cpu_index, gpu_index, nq_cpu, nq_gpu, buffer, I, D, procTimesGpu, procTimesCpu, cfg); 
 
 		int nqueries = nq_cpu + nq_gpu;
 		
 		//TODO: Optimize this to an Immediate Synchronous Send
 		//TODO: Merge these two sends into one
-		MPI_Ssend(I, k * nqueries, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-		MPI_Ssend(D, k * nqueries, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+		MPI_Ssend(I, cfg.k * nqueries, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+		MPI_Ssend(D, cfg.k * nqueries, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
 		
 		qn += nqueries;
 	}
@@ -781,8 +795,8 @@ void search(int shard, int nshards, ProcType ptype) {
 	delete[] D;
 	
 	if (ptype == ProcType::Bench) {
-		store_profile_data("cpu", procTimesCpu);
-		store_profile_data("gpu", procTimesGpu);
+		store_profile_data("cpu", procTimesCpu, cfg);
+		store_profile_data("gpu", procTimesGpu, cfg);
 	}
 
 	deb("Finished search node");
@@ -796,7 +810,7 @@ struct PartialResult {
 	long* base_ids;
 };
 
-void merge_results(std::vector<PartialResult>& results, faiss::Index::idx_t* answers, int nshards) {
+void merge_results(std::vector<PartialResult>& results, faiss::Index::idx_t* answers, int nshards, int k) {
 	int counter[nshards];
 	for (int i = 0; i < nshards; i++) counter[i] = 0;
 
@@ -820,7 +834,7 @@ void merge_results(std::vector<PartialResult>& results, faiss::Index::idx_t* ans
 	}
 }
 
-void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss::Index::idx_t* answers) {
+void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss::Index::idx_t* answers, int k) {
 	std::vector<PartialResult> results(nshards);
 	
 	for (int shard = 0; shard < nshards; shard++) {
@@ -828,7 +842,7 @@ void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss::Index
 		queue[shard].pop();
 	}
 				
-	merge_results(results, answers, nshards);
+	merge_results(results, answers, nshards, k);
 	
 	for (int shard = 0; shard < nshards; shard++) {
 		if (results[shard].own_fields) {
@@ -839,22 +853,22 @@ void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss::Index
 }
 
 
-faiss::Index::idx_t* load_gt() {
+faiss::Index::idx_t* load_gt(Config& cfg) {
 	//	 load ground-truth and convert int to long
 	char idx_path[1000];
 	char gt_path[500];
 	sprintf(gt_path, "%s/gnd", src_path);
-	sprintf(idx_path, "%s/idx_%dM.ivecs", gt_path, nb / 1000000);
+	sprintf(idx_path, "%s/idx_%dM.ivecs", gt_path, cfg.nb / 1000000);
 
 	int n_out;
 	int db_k;
 	int *gt_int = ivecs_read(idx_path, &db_k, &n_out);
 
-	faiss::Index::idx_t* gt = new faiss::Index::idx_t[k * NQ];
+	faiss::Index::idx_t* gt = new faiss::Index::idx_t[cfg.k * cfg.nq];
 
-	for (int i = 0; i < NQ; i++) {
-		for (int j = 0; j < k; j++) {
-			gt[i * k + j] = gt_int[i * db_k + j];
+	for (int i = 0; i < cfg.nq; i++) {
+		for (int j = 0; j < cfg.k; j++) {
+			gt[i * cfg.k + j] = gt_int[i * db_k + j];
 		}
 	}
 
@@ -862,7 +876,7 @@ faiss::Index::idx_t* load_gt() {
 	return gt;
 }
 
-void send_times(std::deque<double>& end_times) {
+void send_times(std::deque<double>& end_times, int eval_length) {
 	double end_times_array[eval_length];
 
 	for (int i = 0; i < eval_length; i++) {
@@ -873,11 +887,11 @@ void send_times(std::deque<double>& end_times) {
 	MPI_Send(end_times_array, eval_length, MPI_DOUBLE, GENERATOR, 0, MPI_COMM_WORLD);
 }
 
-void aggregator(int nshards, ProcType ptype) {
+void aggregator(int nshards, ProcType ptype, Config& cfg) {
 	std::deque<double> end_times;
 
-	auto gt = load_gt();
-	faiss::Index::idx_t* answers = new faiss::Index::idx_t[NQ * k];
+	auto gt = load_gt(cfg);
+	faiss::Index::idx_t* answers = new faiss::Index::idx_t[cfg.nq * cfg.k];
 	
 	std::queue<PartialResult> queue[nshards];
 	std::queue<PartialResult> to_delete;
@@ -902,17 +916,17 @@ void aggregator(int nshards, ProcType ptype) {
 			continue;
 		}
 
-		int qty = message_size / k;
+		int qty = message_size / cfg.k;
 
-		auto I = new faiss::Index::idx_t[k * qty];
-		auto D = new float[k * qty];
+		auto I = new faiss::Index::idx_t[cfg.k * qty];
+		auto D = new float[cfg.k * qty];
 		
-		MPI_Recv(I, k * qty, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		MPI_Recv(D, k * qty, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		MPI_Recv(I, cfg.k * qty, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		MPI_Recv(D, cfg.k * qty, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		
 		int from = status.MPI_SOURCE - 2;
 		for (int q = 0; q < qty; q++) {
-			queue[from].push({D + k * q, I + k * q, q == qty - 1, D, I});
+			queue[from].push({D + cfg.k * q, I + cfg.k * q, q == qty - 1, D, I});
 		}
 
 		while (true) {
@@ -927,15 +941,15 @@ void aggregator(int nshards, ProcType ptype) {
 			
 			if (hasEmpty) break;
 
-			aggregate_query(queue, nshards, answers + (qn % NQ) * k);
+			aggregate_query(queue, nshards, answers + (qn % cfg.nq) * cfg.k, cfg.k);
 			qn++;
 			
-			if (end_times.size() >= eval_length) end_times.pop_front();
+			if (end_times.size() >= cfg.eval_length) end_times.pop_front();
 			end_times.push_back(elapsed());
 		}
 	}
 	
-	if (ptype != ProcType::Bench) send_times(end_times);
+	if (ptype != ProcType::Bench) send_times(end_times, cfg.eval_length);
 	
 	delete [] gt;
 	
