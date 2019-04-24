@@ -25,6 +25,9 @@ train: train.o $(FAISS_LIB)
 simple: simple.o $(FAISS_LIB)
 	g++ $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
+recall: recall.o $(FAISS_LIB)
+		g++ $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
+
 clean:
 	rm -f *.o demo_ivfpq_indexing_gpu sharded train simple
 
