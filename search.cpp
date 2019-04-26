@@ -16,40 +16,45 @@
 #include "Buffer.h"
 #include "readSplittedIndex.h"
 
-static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* label_buffer, bool* finished, Config& cfg) {
+static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* label_buffer, bool& finished_receiving, Config& cfg) {
 	deb("Receiver");
+	
+	long queries_received = 0;
+	long queries_sent = 0;
 	
 	float dummy;
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 
-	while (true) {
-		MPI_Status status;
-		int message_arrived;
-		MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &message_arrived, &status);
-		
-		if (message_arrived) {
-			int message_size;
-			MPI_Get_count(&status, MPI_FLOAT, &message_size);
+	while (! finished_receiving || queries_sent < queries_received) {
+		if (! finished_receiving) {
+			MPI_Status status;
+			int message_arrived;
+			MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &message_arrived, &status);
 
-			if (message_size == 1) {
-				*finished = true;
-				float dummy;
-				MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, & status);
-				break;
+			if (message_arrived) {
+				int message_size;
+				MPI_Get_count(&status, MPI_FLOAT, &message_size);
+
+				if (message_size == 1) {
+					finished_receiving = true;
+					float dummy;
+					MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+				} else {
+					query_buffer->waitForSpace(1);
+					auto recv_data = query_buffer->peekEnd();
+					MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+					query_buffer->add(1);
+					queries_received += cfg.block_size;
+					
+					assert(status.MPI_ERROR == MPI_SUCCESS);
+				}
 			}
-
-			query_buffer->waitForSpace(1);
-
-			auto recv_data = query_buffer->peekEnd();
-			MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, & status);
-
-			query_buffer->add(1);
-
-			assert(status.MPI_ERROR == MPI_SUCCESS);
 		}
 		
 		auto ready = std::min(distance_buffer->entries(), label_buffer->entries());
 		if (ready >= 1) {
+			queries_sent += ready * cfg.block_size;
+			
 			//TODO: Optimize this to an Immediate Synchronous Send
 			MPI_Ssend(label_buffer->peekFront(), cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
 			MPI_Ssend(distance_buffer->peekFront(), cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
@@ -58,7 +63,8 @@ static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* 
 			distance_buffer->consume(ready);
 		}
 	}
-	
+
+	MPI_Ssend(&dummy, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
 	deb("Finished receiving queries");	
 }
 
@@ -263,7 +269,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	int qn = 0;
 	bool finished = false;
 	
-	std::thread receiver { comm_handler, &query_buffer, &distance_buffer, &label_buffer, &finished, std::ref(cfg) };
+	std::thread receiver { comm_handler, &query_buffer, &distance_buffer, &label_buffer, std::ref(finished), std::ref(cfg) };
 	
 	while (! finished || query_buffer.entries() >= 1) {
 		int remaining_blocks = (cfg.test_length - qn) / cfg.block_size;
@@ -281,9 +287,6 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 
 		qn += nqueries;
 	}
-	
-	long dummy = 1;
-	MPI_Ssend(&dummy, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
 	
 	receiver.join();
 
