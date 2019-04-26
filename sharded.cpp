@@ -8,7 +8,7 @@
 #include "utils.h"
 
 ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
-	std::string usage = "./sharded b | d <qr> | s <qr> <num_blocks>";
+	std::string usage = "./sharded b | d <qr> | s <qr> <num_queries>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -38,7 +38,9 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 		}
 
 		cfg.query_rate = atof(argv[2]);
-		cfg.processing_size = atoi(argv[3]);
+		int nq = atoi(argv[3]); 
+		assert(nq % cfg.block_size == 0);
+		cfg.processing_size = nq / cfg.block_size;
 	} else if (ptype == ProcType::Bench) {
 		//nothing
 	}
