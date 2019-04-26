@@ -18,7 +18,6 @@
 
 static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* label_buffer, bool* finished, Config& cfg) {
 	deb("Receiver");
-	int queries_received = 0;
 	
 	float dummy;
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
@@ -30,7 +29,7 @@ static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* 
 		
 		if (message_arrived) {
 			int message_size;
-			MPI_Get_count(& status, MPI_FLOAT, & message_size);
+			MPI_Get_count(&status, MPI_FLOAT, &message_size);
 
 			if (message_size == 1) {
 				*finished = true;
@@ -47,15 +46,13 @@ static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* 
 			query_buffer->add(1);
 
 			assert(status.MPI_ERROR == MPI_SUCCESS);
-
-			queries_received += cfg.block_size;
 		}
 		
 		auto ready = std::min(distance_buffer->entries(), label_buffer->entries());
 		if (ready >= 1) {
 			//TODO: Optimize this to an Immediate Synchronous Send
-			MPI_Ssend(label_buffer->peekEnd(), cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-			MPI_Ssend(distance_buffer->peekEnd(), cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+			MPI_Ssend(label_buffer->peekFront(), cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+			MPI_Ssend(distance_buffer->peekFront(), cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
 			
 			label_buffer->consume(ready);
 			distance_buffer->consume(ready);
