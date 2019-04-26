@@ -39,10 +39,12 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 
 		cfg.query_rate = atof(argv[2]);
 		int nq = atoi(argv[3]); 
+		assert(nq <= cfg.eval_length);
 		assert(nq % cfg.block_size == 0);
 		cfg.processing_size = nq / cfg.block_size;
 	} else if (ptype == ProcType::Bench) {
 		//nothing
+		assert(BENCH_SIZE <= cfg.eval_length);
 	}
 
 	return ptype;

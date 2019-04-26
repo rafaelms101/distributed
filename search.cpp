@@ -142,6 +142,7 @@ static ProfileData getProfilingData(Config& cfg) {
 	for (int nb = 1; nb <= minBlock; nb++) pd.times[nb] = time_per_block[nb];
 	
 	assert(pd.max_block * cfg.block_size != BENCH_SIZE);
+	assert(pd.max_block <= cfg.eval_length);
 	
 	return pd;
 }
@@ -252,8 +253,8 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	auto cpu_index = load_index(shard, nshards, cfg);
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
 	
-	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.test_length * cfg.k];
-	float* D = new float[cfg.test_length * cfg.k];
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
+	float* D = new float[cfg.eval_length * cfg.k];
 	
 	deb("Search node is ready");
 	
