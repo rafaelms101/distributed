@@ -13,7 +13,6 @@ public:
 	~Buffer();
 
 	double block_rate();
-	bool hasSpace(const long qty = 1);
 	void add(const long qty = 1);
 	unsigned char* peekFront();
 	unsigned char* peekEnd();
