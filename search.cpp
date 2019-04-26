@@ -41,7 +41,7 @@ static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* 
 					MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
 				} else {
 					query_buffer->waitForSpace(1);
-					auto recv_data = query_buffer->peekEnd();
+					float* recv_data = reinterpret_cast<float*>(query_buffer->peekEnd());
 					MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
 					query_buffer->add(1);
 					queries_received += cfg.block_size;
@@ -52,12 +52,16 @@ static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* 
 		}
 		
 		auto ready = std::min(distance_buffer->entries(), label_buffer->entries());
+
 		if (ready >= 1) {
 			queries_sent += ready * cfg.block_size;
 			
+			faiss::Index::idx_t* label_ptr = reinterpret_cast<faiss::Index::idx_t*>(label_buffer->peekFront());
+			float* dist_ptr = reinterpret_cast<float*>(distance_buffer->peekFront());
+			
 			//TODO: Optimize this to an Immediate Synchronous Send
-			MPI_Ssend(label_buffer->peekFront(), cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-			MPI_Ssend(distance_buffer->peekFront(), cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
 			
 			label_buffer->consume(ready);
 			distance_buffer->consume(ready);
@@ -249,9 +253,10 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	Buffer query_buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
 	
-	const long result_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
-	Buffer distance_buffer(result_size_in_bytes, 100 * 1024 * 1024 / result_size_in_bytes); //100 MB 
-	Buffer label_buffer(result_size_in_bytes, 100 * 1024 * 1024 / result_size_in_bytes); //100 MB 
+	const long distance_block_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
+	const long label_block_size_in_bytes = sizeof(faiss::Index::idx_t) * cfg.k * cfg.block_size;
+	Buffer distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
+	Buffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
 	
 	faiss::gpu::StandardGpuResources res;
 	res.setTempMemory(1250 * 1024 * 1024);
