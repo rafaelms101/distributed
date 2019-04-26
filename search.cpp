@@ -13,7 +13,7 @@
 #include "gpu/GpuIndexIVFPQ.h"
 
 #include "utils.h"
-#include "QueryBuffer.h"
+#include "Buffer.h"
 #include "readSplittedIndex.h"
 
 static inline double _search(faiss::Index* index, int nq, float* queries, float* D, faiss::Index::idx_t* I, Config& cfg) {
@@ -24,14 +24,13 @@ static inline double _search(faiss::Index* index, int nq, float* queries, float*
 	return after - before;
 }
 
-static void query_receiver(QueryBuffer* buffer, bool* finished, Config& cfg) {
+static void query_receiver(Buffer* buffer, bool* finished, Config& cfg) {
 	deb("Receiver");
 	int queries_received = 0;
 	
 	float dummy;
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
-	
-	//TODO: I will left it like this for the time being since buffer will always have free space available. In the future we should use events so that this thread sleeps while waiting for the buffer to have space
+
 	while (true) {
 		MPI_Status status;
 		MPI_Probe(GENERATOR, 0, MPI_COMM_WORLD, &status);
@@ -45,13 +44,13 @@ static void query_receiver(QueryBuffer* buffer, bool* finished, Config& cfg) {
 			MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
 			break;
 		}
-		
-		while (! buffer->hasSpace());
+
+		buffer->waitForSpace(1);
 
 		float* recv_data = reinterpret_cast<float*>(buffer->peekEnd());
-		MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0,
-				MPI_COMM_WORLD, &status);
-		buffer->add();
+		MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+		
+		buffer->add(1);
 
 		assert(status.MPI_ERROR == MPI_SUCCESS);
 
@@ -61,7 +60,7 @@ static void query_receiver(QueryBuffer* buffer, bool* finished, Config& cfg) {
 	deb("Finished receiving queries");
 }
 
-static auto load_index(int shard, int nshards, Config& cfg) {
+static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
 	deb("Started loading");
 
 	char index_path[500];
@@ -79,7 +78,6 @@ static auto load_index(int shard, int nshards, Config& cfg) {
 	return cpu_index;
 }
 
-//TODO: separate each stage in its own file
 //TODO: currently, we use the same files in all nodes. This doesn't work with ProfileData, since each machine is different. Need to create a way for each node to load a different file.
 namespace {
 	struct ProfileData {
@@ -198,7 +196,7 @@ static int bsearch(int min, int max, double* data, double val) {
 	else return min;
 }
 
-static int numBlocksRequired(ProcType ptype, QueryBuffer& buffer, ProfileData& pdGPU, Config& cfg) {
+static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdGPU, Config& cfg) {
 	switch (ptype) {
 		case ProcType::Dynamic: {
 			buffer.waitForData(1);
@@ -234,7 +232,7 @@ static int numBlocksRequired(ProcType ptype, QueryBuffer& buffer, ProfileData& p
 	}
 }
 
-static std::pair<int, int> computeSplitCPU_GPU(ProcType ptype, QueryBuffer& buffer, int num_blocks, ProfileData& pdGPU, ProfileData& pdCPU, Config& cfg) {
+static std::pair<int, int> computeSplitCPU_GPU(ProcType ptype, Buffer& buffer, int num_blocks, ProfileData& pdGPU, ProfileData& pdCPU, Config& cfg) {
 	int nq_cpu, nq_gpu;
 	
 	switch (ptype) {
@@ -269,7 +267,7 @@ static std::pair<int, int> computeSplitCPU_GPU(ProcType ptype, QueryBuffer& buff
 	return std::make_pair(nq_cpu, nq_gpu);
 }
 
-static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_index, int nq_cpu, int nq_gpu, QueryBuffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesGpu, std::vector<double>& procTimesCpu, Config& cfg) {
+static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_index, int nq_cpu, int nq_gpu, Buffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesGpu, std::vector<double>& procTimesCpu, Config& cfg) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	
 	//now we proccess our query buffer
@@ -323,10 +321,10 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	}
 
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
-	QueryBuffer buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
+	Buffer buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
 	
 	faiss::gpu::StandardGpuResources res;
-	res.setTempMemoryFraction(0.14);
+	res.setTempMemory(1250 * 1024 * 1024);
 
 	auto cpu_index = load_index(shard, nshards, cfg);
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
@@ -345,7 +343,10 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	
 	while (! finished || buffer.entries() >= 1) {
 		int num_blocks = numBlocksRequired(ptype, buffer, pdGPU, cfg);
-		auto [nq_cpu, nq_gpu] = computeSplitCPU_GPU(ptype, buffer, num_blocks, pdGPU, pdCPU, cfg);
+		
+		std::pair<int, int> p = computeSplitCPU_GPU(ptype, buffer, num_blocks, pdGPU, pdCPU, cfg);
+		auto nq_cpu = p.first;
+		auto nq_gpu = p.second;
 		
 		int remaining_blocks = (cfg.test_length - qn) / 20;
 		buffer.waitForData(std::min(num_blocks, remaining_blocks));

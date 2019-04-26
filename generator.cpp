@@ -156,7 +156,9 @@ static void single_block_size_generator(int nshards, Config& cfg) {
 	bool first = true;
 	
 	while (true) {
-		auto [id, query_time] = next_query(cfg.test_length, cfg);
+		std::pair<int, double> p = next_query(cfg.test_length, cfg);
+		auto id = p.first;
+		auto query_time = p.second;
 		
 		if (id == -1) {
 			continue;

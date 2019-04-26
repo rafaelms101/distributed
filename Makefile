@@ -14,21 +14,21 @@ FAISS_INCLUDE = -I $(FAISS_HOME)/.. -I $(FAISS_HOME)
 FAISS_LIB = $(FAISS_HOME)/libfaiss.a
 
 %.o: %.cpp
-	$(CXX) -g $(OPT) $(CPPFLAGS) -o $@ -c $^ $(FAISS_INCLUDE) -std=c++17
+	$(CXX) -g $(OPT) $(CPPFLAGS) -o $@ -c $^ $(FAISS_INCLUDE)
 
-sharded: utils.o readSplittedIndex.o generator.o search.o aggregator.o QueryBuffer.o sharded.o $(FAISS_LIB)
-	mpic++ $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
+sharded: utils.o readSplittedIndex.o generator.o search.o aggregator.o Buffer.o sharded.o $(FAISS_LIB)
+	mpic++ -std=c++11 $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 train: train.o $(FAISS_LIB)
-	mpic++ $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
+	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 simple: simple.o $(FAISS_LIB)
-	g++ $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
+	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 recall: recall.o $(FAISS_LIB)
-		g++ $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
+		$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 clean:
-	rm -f *.o demo_ivfpq_indexing_gpu sharded train simple
+	rm -f *.o sharded train simple recall
 
 .PHONY: clean
