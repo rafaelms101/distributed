@@ -13,7 +13,7 @@ OPT = -O3
 FAISS_INCLUDE = -I $(FAISS_HOME)/.. -I $(FAISS_HOME)
 FAISS_LIB = $(FAISS_HOME)/libfaiss.a
 
-%.o: %.cpp %.h
+%.o: %.cpp *.h
 	$(CXX) -g $(OPT) $(CPPFLAGS) -o $@ -c $< $(FAISS_INCLUDE)
 
 sharded: utils.o readSplittedIndex.o generator.o search.o aggregator.o Buffer.o sharded.o $(FAISS_LIB)

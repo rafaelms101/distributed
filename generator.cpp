@@ -121,14 +121,16 @@ static void send_finished_signal(int nshards) {
 	}
 }
 
-static void bench_generator(int num_blocks, int block_size, int nshards, Config& cfg) {
-	assert(num_blocks * block_size <= cfg.nq);
+static void bench_generator(int num_queries, int nshards, Config& cfg) {
+	auto num_blocks = num_queries / cfg.block_size;
+	
+	assert(num_queries <= cfg.nq);
 
 	float* xq = load_queries(cfg.d, cfg.nq);
 
 	for (int i = 1; i <= num_blocks; i++) {
 		for (int repeats = 1; repeats <= bench_repeats; repeats++) {
-			for (int b = 1; b <= i * 2; b++) {
+			for (int b = 1; b <= i; b++) {
 				send_queries(nshards, xq, cfg.block_size, cfg.d);
 			}
 		}
@@ -219,6 +221,6 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 		shards_ready++;
 	}
 
-	if (ptype == ProcType::Bench) bench_generator(3000 / 20, cfg.block_size, nshards, cfg);
+	if (ptype == ProcType::Bench) bench_generator(BENCH_SIZE, nshards, cfg);
 	else single_block_size_generator(nshards, cfg);
 }

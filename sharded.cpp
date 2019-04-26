@@ -8,14 +8,14 @@
 #include "utils.h"
 
 ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
-	std::string usage = "./sharded b | d <qr> | s <qr> <num_blocks> <gpu_slice>";
+	std::string usage = "./sharded b | d <qr> | s <qr> <num_blocks>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
 		MPI_Abort(MPI_COMM_WORLD, -1);
 	}
 
-	ProcType ptype;
+	ProcType ptype = ProcType::Bench;
 	if (!strcmp("d", argv[1])) ptype = ProcType::Dynamic;
 	else if (!strcmp("b", argv[1])) ptype = ProcType::Bench;
 	else if (!strcmp("s", argv[1])) ptype = ProcType::Static;
@@ -32,16 +32,13 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 
 		cfg.query_rate = atof(argv[2]);
 	} else if (ptype == ProcType::Static) {
-		if (argc != 5) {
+		if (argc != 4) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			MPI_Abort(MPI_COMM_WORLD, -1);
 		}
 
 		cfg.query_rate = atof(argv[2]);
 		cfg.processing_size = atoi(argv[3]);
-		cfg.gpu_slice = atof(argv[4]);
-
-		assert(cfg.gpu_slice >= 0 && cfg.gpu_slice <= 1);
 	} else if (ptype == ProcType::Bench) {
 		//nothing
 	}
