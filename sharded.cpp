@@ -68,11 +68,9 @@ Config inline loadConfig() {
 
 int main(int argc, char* argv[]) {
 	Config cfg = loadConfig();
-	
-	int provided;
-	MPI_Init_thread(nullptr, nullptr, MPI_THREAD_MULTIPLE, &provided);
-	assert(provided == MPI_THREAD_MULTIPLE);
-	
+
+	MPI_Init(&argc, &argv);
+
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	
