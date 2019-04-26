@@ -19,6 +19,7 @@ public:
 	void consume(const long n);
 	void waitForData(int n);
 	void waitForSpace(int n);
+	void transfer(void* data, int num_blocks);
 	int entries();
 	
 private:

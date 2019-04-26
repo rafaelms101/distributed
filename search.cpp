@@ -16,7 +16,7 @@
 #include "Buffer.h"
 #include "readSplittedIndex.h"
 
-static void query_receiver(Buffer* buffer, bool* finished, Config& cfg) {
+static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* label_buffer, bool* finished, Config& cfg) {
 	deb("Receiver");
 	int queries_received = 0;
 	
@@ -25,31 +25,44 @@ static void query_receiver(Buffer* buffer, bool* finished, Config& cfg) {
 
 	while (true) {
 		MPI_Status status;
-		MPI_Probe(GENERATOR, 0, MPI_COMM_WORLD, &status);
+		int message_arrived;
+		MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &message_arrived, &status);
 		
-		int message_size;
-		MPI_Get_count(&status, MPI_FLOAT, &message_size);
-		
-		if (message_size == 1) {
-			*finished = true;
-			float dummy;
-			MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-			break;
+		if (message_arrived) {
+			int message_size;
+			MPI_Get_count(& status, MPI_FLOAT, & message_size);
+
+			if (message_size == 1) {
+				*finished = true;
+				float dummy;
+				MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, & status);
+				break;
+			}
+
+			query_buffer->waitForSpace(1);
+
+			auto recv_data = query_buffer->peekEnd();
+			MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, & status);
+
+			query_buffer->add(1);
+
+			assert(status.MPI_ERROR == MPI_SUCCESS);
+
+			queries_received += cfg.block_size;
 		}
-
-		buffer->waitForSpace(1);
-
-		float* recv_data = reinterpret_cast<float*>(buffer->peekEnd());
-		MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
 		
-		buffer->add(1);
-
-		assert(status.MPI_ERROR == MPI_SUCCESS);
-
-		queries_received += cfg.block_size;
+		auto ready = std::min(distance_buffer->entries(), label_buffer->entries());
+		if (ready >= 1) {
+			//TODO: Optimize this to an Immediate Synchronous Send
+			MPI_Ssend(label_buffer->peekEnd(), cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+			MPI_Ssend(distance_buffer->peekEnd(), cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+			
+			label_buffer->consume(ready);
+			distance_buffer->consume(ready);
+		}
 	}
 	
-	deb("Finished receiving queries");
+	deb("Finished receiving queries");	
 }
 
 static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
@@ -230,7 +243,11 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	if (ptype == ProcType::Dynamic) pdGPU = getProfilingData(cfg);
 
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
-	Buffer buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
+	Buffer query_buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
+	
+	const long result_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
+	Buffer distance_buffer(result_size_in_bytes, 100 * 1024 * 1024 / result_size_in_bytes); //100 MB 
+	Buffer label_buffer(result_size_in_bytes, 100 * 1024 * 1024 / result_size_in_bytes); //100 MB 
 	
 	faiss::gpu::StandardGpuResources res;
 	res.setTempMemory(1250 * 1024 * 1024);
@@ -248,24 +265,22 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	int qn = 0;
 	bool finished = false;
 	
-	std::thread receiver { query_receiver, &buffer, &finished, std::ref(cfg) };
+	std::thread receiver { comm_handler, &query_buffer, &distance_buffer, &label_buffer, &finished, std::ref(cfg) };
 	
-	while (! finished || buffer.entries() >= 1) {
+	while (! finished || query_buffer.entries() >= 1) {
 		int remaining_blocks = (cfg.test_length - qn) / cfg.block_size;
-		int num_blocks = numBlocksRequired(ptype, buffer, pdGPU, cfg);
+		int num_blocks = numBlocksRequired(ptype, query_buffer, pdGPU, cfg);
 		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, remaining_blocks);
-		buffer.waitForData(num_blocks);
+		query_buffer.waitForData(num_blocks);
 
 		int nqueries = num_blocks * cfg.block_size;
 		
 		deb("Processing %d queries", nqueries);
-		process_buffer(ptype, gpu_index, nqueries, buffer, I, D, procTimesGpu, cfg); 
+		process_buffer(ptype, gpu_index, nqueries, query_buffer, I, D, procTimesGpu, cfg); 
 		
-		//TODO: Optimize this to an Immediate Synchronous Send
-		//TODO: Merge these two sends into one
-		MPI_Ssend(I, cfg.k * nqueries, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-		MPI_Ssend(D, cfg.k * nqueries, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
-		
+		label_buffer.transfer(I, num_blocks);
+		distance_buffer.transfer(D, num_blocks);
+
 		qn += nqueries;
 	}
 	

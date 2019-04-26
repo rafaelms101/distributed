@@ -106,4 +106,10 @@ void Buffer::waitForData(int n) {
 	}
 }
 
+void Buffer::transfer(void* ptr, int num_blocks) {
+	waitForSpace(num_blocks);
+	std::memcpy(data + start, ptr, block_size * num_blocks);
+	add(num_blocks);
+}
+
 
