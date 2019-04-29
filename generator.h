@@ -2,6 +2,7 @@
 #define GENERATOR_H
 
 #include "utils.h"
+#include "config.h"
 
 void generator(int nshards, ProcType ptype, Config& cfg);
 

@@ -63,7 +63,7 @@ static faiss::Index::idx_t* load_gt(Config& cfg) {
 	//	 load ground-truth and convert int to long
 	char idx_path[1000];
 	char gt_path[500];
-	sprintf(gt_path, "%s/gnd", src_path);
+	sprintf(gt_path, "%s/gnd", SRC_PATH);
 	sprintf(idx_path, "%s/idx_%dM.ivecs", gt_path, cfg.nb / 1000000);
 
 	int n_out;

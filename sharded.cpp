@@ -6,6 +6,7 @@
 #include "search.h"
 #include "aggregator.h"
 #include "utils.h"
+#include "config.h"
 
 ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 	std::string usage = "./sharded b | d <qr> | s <qr> <num_queries>";
@@ -50,24 +51,8 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 	return ptype;
 }
 
-Config inline loadConfig() {
-	Config cfg; 
-	cfg.d = 128;
-	cfg.nb = 500000000;
-	cfg.ncentroids = 8192;
-	cfg.m = 8;
-	cfg.k = 100;
-	cfg.nprobe = 8;
-	cfg.block_size = 20;
-	cfg.test_length = 100000;
-	cfg.eval_length = 10000;
-	cfg.nq = 10000;
-	
-	return cfg;
-}
-
 int main(int argc, char* argv[]) {
-	Config cfg = loadConfig();
+	Config cfg;
 
 	MPI_Init(&argc, &argv);
 

@@ -2,6 +2,7 @@
 #define AGGREGATOR_H_
 
 #include "utils.h"
+#include "config.h"
 
 void aggregator(int nshards, ProcType ptype, Config& cfg);
 

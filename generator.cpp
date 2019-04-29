@@ -41,7 +41,7 @@ static float* to_float_array(unsigned char* vector, int ne, int d) {
 
 static float* load_queries(int d, int nq) {
 	char query_path[500];
-	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
+	sprintf(query_path, "%s/bigann_query.bvecs", SRC_PATH);
 
 	int world_size;
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -129,7 +129,7 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 	float* xq = load_queries(cfg.d, cfg.nq);
 
 	for (int i = 1; i <= num_blocks; i++) {
-		for (int repeats = 1; repeats <= bench_repeats; repeats++) {
+		for (int repeats = 1; repeats <= BENCH_REPEATS; repeats++) {
 			for (int b = 1; b <= i; b++) {
 				send_queries(nshards, xq, cfg.block_size, cfg.d);
 			}

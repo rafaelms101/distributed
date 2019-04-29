@@ -1,3 +1,5 @@
+#include "search.h"
+
 #include <mpi.h>
 #include <algorithm>
 #include <future>
@@ -74,9 +76,9 @@ static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* 
 
 static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
 	deb("Started loading");
-
+	
 	char index_path[500];
-	sprintf(index_path, "index/index_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m);
+	sprintf(index_path, "%s/index_%d_%d_%d", INDEX_ROOT, cfg.nb, cfg.ncentroids, cfg.m);
 
 	deb("Loading file: %s", index_path);
 
@@ -159,13 +161,15 @@ static ProfileData getProfilingData(Config& cfg) {
 
 
 static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
+	system("mkdir -p prof"); //to make sure that the "prof" dir exists
+	
 	//now we write the time data on a file
 	char file_path[100];
 	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 	std::ofstream file;
 	file.open(file_path);
 
-	int blocks = procTimes.size() / bench_repeats;
+	int blocks = procTimes.size() / BENCH_REPEATS;
 	file << blocks << std::endl;
 
 	int ptr = 0;
@@ -173,13 +177,13 @@ static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
 	for (int b = 1; b <= blocks; b++) {
 		std::vector<double> times;
 
-		for (int repeats = 1; repeats <= bench_repeats; repeats++) {
+		for (int repeats = 1; repeats <= BENCH_REPEATS; repeats++) {
 			times.push_back(procTimes[ptr++]);
 		}
 
 		std::sort(times.begin(), times.end());
 
-		int mid = bench_repeats / 2;
+		int mid = BENCH_REPEATS / 2;
 		file << times[mid] << std::endl;
 	}
 
@@ -211,7 +215,7 @@ static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdGPU,
 			static int nrepeats = 0;
 			static int nb = 1;
 
-			if (nrepeats >= bench_repeats) {
+			if (nrepeats >= BENCH_REPEATS) {
 				nrepeats = 0;
 				nb++;
 			}
