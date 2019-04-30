@@ -139,7 +139,7 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 
 	for (int i = 1; i <= num_blocks; i++) {
 		for (int repeats = 1; repeats <= BENCH_REPEATS; repeats++) {
-			for (int b = 1; b <= i; b++) {
+			for (int b = 1; b <= i * 2; b++) {
 				send_queries(nshards, xq, cfg.block_size, cfg.d);
 			}
 		}

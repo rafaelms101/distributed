@@ -101,7 +101,7 @@ namespace {
 	};
 }
 
-static ProfileData getProfilingData(Config& cfg) {	
+static ProfileData getProfilingData(Config& cfg, bool cpu) {	
 	char file_path[100];
 	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 	std::ifstream file;
@@ -161,13 +161,12 @@ static ProfileData getProfilingData(Config& cfg) {
 	return pd;
 }
 
-
-static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
+static void store_profile_data(std::vector<double>& procTimes, bool cpu, Config& cfg) {
 	system("mkdir -p prof"); //to make sure that the "prof" dir exists
 	
 	//now we write the time data on a file
 	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, cpu ? "cpu" : "gpu");
 	std::ofstream file;
 	file.open(file_path);
 
@@ -223,38 +222,91 @@ static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdGPU,
 			}
 
 			nrepeats++;
-			return nb;
+			return nb * 2;
 		}
 	}
 	
 	return 0;
 }
 
-static void process_buffer(ProcType ptype, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesGpu, Config& cfg) {
+static std::pair<int, int> compute_split(int nq, ProcType ptype, Config& cfg) {
+	int nq_cpu = 0;
+	int nq_gpu = 0;
+	
+	switch (ptype) {
+		case ProcType::Dynamic: {
+			nq_gpu = nq;
+			nq_cpu = 0;
+			break;
+		}
+		case ProcType::Static: {
+			nq_gpu = static_cast<int>(nq * cfg.gpu_slice);
+			nq_cpu = 1 - nq_gpu;
+			break;
+		}
+		case ProcType::Bench: {
+			nq_gpu = nq / 2;
+			nq_cpu = nq_gpu;
+			break;
+		}
+	}
+	
+	return std::make_pair(nq_cpu, nq_gpu);
+}
+
+static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesCpu, std::vector<double>& procTimesGpu, Config& cfg) {
+	auto p = compute_split(nq, ptype, cfg);
+	int nq_cpu = p.first;
+	int nq_gpu = p.second;
+	
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	
 	//now we proccess our query buffer
 	if (ptype == ProcType::Bench) {
-		static bool finished = false;
+		static bool cpu_finished = false;
+		static bool gpu_finished = false;
 		
-		if (! finished) {
+		//TODO: consider having an always on thread, instead of always creating a new one
+		std::thread gpu_thread {[&] { 
+			if (! gpu_finished) {
+				auto before = now();
+				gpu_index->search(nq_gpu, query_buffer + nq_cpu * cfg.d, cfg.k, D + nq_cpu * cfg.k, I + nq_cpu * cfg.k);
+				auto time_spent = now() - before;
+				procTimesGpu.push_back(time_spent);
+				gpu_finished = time_spent >= 1;
+			}
+		}};
+		
+		if (! cpu_finished) {
 			auto before = now();
-			gpu_index->search(nq, query_buffer, cfg.k, D, I);
+			cpu_index->search(nq_cpu, query_buffer, cfg.k, D, I);
 			auto time_spent = now() - before;
-
-			procTimesGpu.push_back(time_spent);
-			finished = time_spent >= 1;
+			procTimesCpu.push_back(time_spent);
+			cpu_finished = time_spent >= 1;
 		}
-	} else gpu_index->search(nq, query_buffer, cfg.k, D, I);
+		
+		gpu_thread.join();
+	} else {
+		std::thread gpu_thread { [&] {
+			gpu_index->search(nq_gpu, query_buffer + nq_cpu * cfg.d, cfg.k, D + nq_cpu * cfg.k, I + nq_cpu * cfg.k);
+		}};
+		
+		cpu_index->search(nq_cpu, query_buffer, cfg.k, D, I);
+		
+		gpu_thread.join();
+	}
 
 	buffer.consume(nq / cfg.block_size);
 }
 
 void search(int shard, int nshards, ProcType ptype, Config& cfg) {
-	std::vector<double> procTimesGpu;
+	std::vector<double> procTimesGpu, procTimesCpu;
 	
-	ProfileData pdGPU; 
-	if (ptype == ProcType::Dynamic) pdGPU = getProfilingData(cfg);
+	ProfileData pdGPU, pdCPU; 
+	if (ptype == ProcType::Dynamic) {
+		pdCPU = getProfilingData(cfg, true);
+		pdGPU = getProfilingData(cfg, false);
+	}
 
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	Buffer query_buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
@@ -291,7 +343,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 		int nqueries = num_blocks * cfg.block_size;
 		
 		deb("Processing %d queries", nqueries);
-		process_buffer(ptype, gpu_index, nqueries, query_buffer, I, D, procTimesGpu, cfg); 
+		process_buffer(ptype, cpu_index, gpu_index, nqueries, query_buffer, I, D, procTimesCpu, procTimesGpu, cfg); 
 		
 		label_buffer.transfer(I, num_blocks);
 		distance_buffer.transfer(D, num_blocks);
@@ -305,7 +357,8 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	delete[] D;
 	
 	if (ptype == ProcType::Bench) {
-		store_profile_data(procTimesGpu, cfg);
+		store_profile_data(procTimesGpu, false, cfg);
+		store_profile_data(procTimesCpu, true, cfg);
 	}
 
 	deb("Finished search node");

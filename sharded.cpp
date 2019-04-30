@@ -9,7 +9,7 @@
 #include "config.h"
 
 ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
-	std::string usage = "./sharded b | d <qr> | s <qr> <num_queries>";
+	std::string usage = "./sharded b | d <qr> | s <qr> <num_queries> <gpu_slice>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -33,7 +33,7 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 
 		cfg.query_rate = atof(argv[2]);
 	} else if (ptype == ProcType::Static) {
-		if (argc != 4) {
+		if (argc != 5) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
@@ -43,6 +43,7 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 		assert(nq <= cfg.eval_length);
 		assert(nq % cfg.block_size == 0);
 		cfg.processing_size = nq / cfg.block_size;
+		cfg.gpu_slice = atoi(argv[4]);
 	} else if (ptype == ProcType::Bench) {
 		//nothing
 		assert(BENCH_SIZE <= cfg.eval_length);
