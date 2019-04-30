@@ -241,7 +241,7 @@ static std::pair<int, int> compute_split(int nq, ProcType ptype, Config& cfg) {
 		}
 		case ProcType::Static: {
 			nq_gpu = static_cast<int>(nq * cfg.gpu_slice);
-			nq_cpu = 1 - nq_gpu;
+			nq_cpu = nq - nq_gpu;
 			break;
 		}
 		case ProcType::Bench: {
@@ -268,7 +268,7 @@ static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index
 		
 		//TODO: consider having an always on thread, instead of always creating a new one
 		std::thread gpu_thread {[&] { 
-			if (! gpu_finished) {
+			if (! gpu_finished && nq_gpu >= 1) {
 				auto before = now();
 				gpu_index->search(nq_gpu, query_buffer + nq_cpu * cfg.d, cfg.k, D + nq_cpu * cfg.k, I + nq_cpu * cfg.k);
 				auto time_spent = now() - before;
@@ -277,7 +277,7 @@ static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index
 			}
 		}};
 		
-		if (! cpu_finished) {
+		if (! cpu_finished && nq_cpu >= 1) {
 			auto before = now();
 			cpu_index->search(nq_cpu, query_buffer, cfg.k, D, I);
 			auto time_spent = now() - before;
@@ -288,10 +288,10 @@ static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index
 		gpu_thread.join();
 	} else {
 		std::thread gpu_thread { [&] {
-			gpu_index->search(nq_gpu, query_buffer + nq_cpu * cfg.d, cfg.k, D + nq_cpu * cfg.k, I + nq_cpu * cfg.k);
+			if (nq_gpu >= 1) gpu_index->search(nq_gpu, query_buffer + nq_cpu * cfg.d, cfg.k, D + nq_cpu * cfg.k, I + nq_cpu * cfg.k);
 		}};
 		
-		cpu_index->search(nq_cpu, query_buffer, cfg.k, D, I);
+		if (nq_cpu >= 1) cpu_index->search(nq_cpu, query_buffer, cfg.k, D, I);
 		
 		gpu_thread.join();
 	}
