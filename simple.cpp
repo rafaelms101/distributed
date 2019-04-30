@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <limits>
+#include <bits/stdc++.h>
 
 #include <faiss/index_io.h>
 #include "faiss/IndexFlat.h"
@@ -17,16 +18,7 @@
 #include "gpu/StandardGpuResources.h"
 #include "gpu/GpuIndexIVFPQ.h"
 
-#include <bits/stdc++.h>
-
-
-int nb = 500000000;
-int ncentroids = 8192;
-int m = 8;
-int k = 10;
-int d = 128;
-int nprobe = 8;
-char src_path[] = "/home/rafael/mestrado/bigann/";
+#include "config.h"
 
 double elapsed () {
     struct timeval tv;
@@ -104,9 +96,9 @@ int *ivecs_read(const char *fname, int *d_out, int *n_out) {
     return (int*)fvecs_read(fname, d_out, n_out);
 }
 
-float* load_queries() {
+float* load_queries(int d) {
 	char query_path[500];
-	sprintf(query_path, "%s/bigann_query.bvecs", src_path);
+	sprintf(query_path, "%s/bigann_query.bvecs", SRC_PATH);
 
 	//loading queries
 	size_t fz;
@@ -117,22 +109,22 @@ float* load_queries() {
 	return xq;
 }
 
-auto load_index() {
+faiss::Index* load_index(Config& cfg) {
 	char index_path[500];
-	sprintf(index_path, "index/index_%d_%d_%d", nb, ncentroids, m);
+	sprintf(index_path, "%s/index_%d_%d_%d", INDEX_ROOT, cfg.nb, cfg.ncentroids, cfg.m);
 
 	FILE* index_file = fopen(index_path, "r");
 	auto cpu_index = faiss::read_index(index_file);
 
-	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = nprobe;
+	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = cfg.nprobe;
 	return cpu_index;
 }
 
-faiss::Index::idx_t* load_gt() {
+faiss::Index::idx_t* load_gt(int nb, int k) {
 	//	 load ground-truth and convert int to long
 	char idx_path[1000];
 	char gt_path[500];
-	sprintf(gt_path, "%s/gnd", src_path);
+	sprintf(gt_path, "%s/gnd", SRC_PATH);
 	sprintf(idx_path, "%s/idx_%dM.ivecs", gt_path, nb / 1000000);
 
 	int n_out;
@@ -152,6 +144,8 @@ faiss::Index::idx_t* load_gt() {
 }
 
 int main(int argc, char** argv) {
+	Config cfg;
+	
 	if (argc != 7) {
 		std::printf("Wrong usage.\n./simple <cpu|gpu> <begin> <end> <step> <ncentroids> <nprobe>\n");
 	}
@@ -161,19 +155,20 @@ int main(int argc, char** argv) {
 	int end = atoi(argv[3]);
 	int step = atoi(argv[4]);
 	
-	ncentroids = atoi(argv[5]);
-	nprobe = atoi(argv[6]);
+	cfg.ncentroids = atoi(argv[5]);
+	cfg.nprobe = atoi(argv[6]);
 
 	faiss::gpu::StandardGpuResources res;
+	res.setTempMemory(1350 * 1024 * 1024); 
 
-	auto index = load_index();
+	auto index = load_index(cfg);
 	if (gpu) index = faiss::gpu::index_cpu_to_gpu(&res, 0, index, nullptr);
-	float* original_queries = load_queries();
+	float* original_queries = load_queries(cfg.d);
 
 	float* queries = new float[end * 128];
 
-	float* D = new float[k * end];
-	faiss::Index::idx_t* I = new faiss::Index::idx_t[k * end];
+	float* D = new float[cfg.k * end];
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.k * end];
 
 	for (int i = 0; i < end * 128; i++) {
 		queries[i] = original_queries[i % (10000 * 128)];
@@ -185,7 +180,7 @@ int main(int argc, char** argv) {
 
 		while (repeats <= 10) {
 			double before = elapsed();
-			index->search(nq, queries, k, D, I);
+			index->search(nq, queries, cfg.k, D, I);
 			double after = elapsed();
 
 			times.push_back(after - before);
