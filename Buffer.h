@@ -1,5 +1,5 @@
-#ifndef CIRCULARBUFFER_H_
-#define CIRCULARBUFFER_H_
+#ifndef BUFFER_H_
+#define BUFFER_H_
 
 #include <stdexcept>
 #include <assert.h>
