@@ -101,9 +101,9 @@ namespace {
 	};
 }
 
-static ProfileData getProfilingData(Config& cfg, bool cpu) {	
+static ProfileData getProfilingData(Config& cfg, bool cpu, double max_gpu_time = 0) {	
 	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, cpu ? "cpu" : "gpu");
 	std::ifstream file;
 	file.open(file_path);
 	
@@ -125,36 +125,48 @@ static ProfileData getProfilingData(Config& cfg, bool cpu) {
 	file.close();
 	
 	ProfileData pd;
-	double time_per_block[total_size + 1];
-	time_per_block[0] = 0;
-
-	for (int i = 1; i <= total_size; i++) {
-		time_per_block[i] = times[i] / i;
-	}
-
-	double tolerance = 0.1;
-	int minBlock = 1;
-
-	for (int nb = 1; nb <= total_size; nb++) {
-		if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
-	}
-
-	double threshold = time_per_block[minBlock] * (1 + tolerance);
-
-	int nb = 1;
-	while (time_per_block[nb] > threshold) nb++;
-	pd.min_block = nb;
-
-	nb = total_size;
-	while (time_per_block[nb] > threshold) nb--;
-	pd.max_block = nb;
-
-	pd.times = new double[minBlock + 1];
-	pd.times[0] = 0;
-	for (int nb = 1; nb <= minBlock; nb++) pd.times[nb] = time_per_block[nb];
 	
-	assert(pd.max_block * cfg.block_size != BENCH_SIZE);
-	assert(pd.max_block <= cfg.eval_length);
+	if (cpu) {
+		for (int nb = 1; nb <= total_size; nb++) {
+			if (times[nb] <= max_gpu_time) pd.max_block = nb;
+		}
+		
+		cfg.max_cpu = pd.max_block;
+	} else {
+		double time_per_block[total_size + 1];
+		time_per_block[0] = 0;
+
+		for (int i = 1; i <= total_size; i++) {
+			time_per_block[i] = times[i] / i;
+		}
+
+		double tolerance = 0.1;
+		int minBlock = 1;
+
+		for (int nb = 1; nb <= total_size; nb++) {
+			if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
+		}
+
+		double threshold = time_per_block[minBlock] * (1 + tolerance);
+
+		int nb = 1;
+		while (time_per_block[nb] > threshold) nb++;
+		pd.min_block = nb;
+
+		nb = total_size;
+		while (time_per_block[nb] > threshold) nb--;
+		pd.max_block = nb;
+
+		pd.times = new double[minBlock + 1];
+		pd.times[0] = 0;
+		for (int nb = 1; nb <= minBlock; nb++) pd.times[nb] = time_per_block[nb];
+
+		cfg.max_gpu = pd.max_block;
+		
+		assert(pd.max_block * cfg.block_size != BENCH_SIZE);
+		assert(pd.max_block <= cfg.eval_length);
+	}
+	
 	
 	deb("min=%d, max=%d", pd.min_block * cfg.block_size, pd.max_block * cfg.block_size);
 	
@@ -191,7 +203,7 @@ static void store_profile_data(std::vector<double>& procTimes, bool cpu, Config&
 	file.close();
 }
 
-static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdGPU, Config& cfg) {
+static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdCPU, ProfileData& pdGPU, Config& cfg) {
 	switch (ptype) {
 		case ProcType::Dynamic: {
 			buffer.waitForData(1);
@@ -207,7 +219,7 @@ static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdGPU,
 				}
 			}
 
-			return std::min(buffer.entries(), pdGPU.max_block);
+			return std::min(buffer.entries(), pdGPU.max_block + pdCPU.max_block);
 		}
 		case ProcType::Static: {
 			return cfg.processing_size;
@@ -235,21 +247,20 @@ static std::pair<int, int> compute_split(int nq, ProcType ptype, Config& cfg) {
 	
 	switch (ptype) {
 		case ProcType::Dynamic: {
-			nq_gpu = nq;
-			nq_cpu = 0;
+			nq_gpu = std::min(cfg.max_gpu, nq);
 			break;
 		}
 		case ProcType::Static: {
 			nq_gpu = static_cast<int>(nq * cfg.gpu_slice);
-			nq_cpu = nq - nq_gpu;
 			break;
 		}
 		case ProcType::Bench: {
 			nq_gpu = nq / 2;
-			nq_cpu = nq_gpu;
 			break;
 		}
 	}
+	
+	nq_cpu = nq - nq_gpu;
 	
 	return std::make_pair(nq_cpu, nq_gpu);
 }
@@ -304,8 +315,8 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	
 	ProfileData pdGPU, pdCPU; 
 	if (ptype == ProcType::Dynamic) {
-		pdCPU = getProfilingData(cfg, true);
 		pdGPU = getProfilingData(cfg, false);
+		pdCPU = getProfilingData(cfg, true, pdGPU.times[pdGPU.max_block]);
 	}
 
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
@@ -336,7 +347,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	
 	while (! finished || query_buffer.entries() >= 1) {
 		int remaining_blocks = (cfg.test_length - qn) / cfg.block_size;
-		int num_blocks = numBlocksRequired(ptype, query_buffer, pdGPU, cfg);
+		int num_blocks = numBlocksRequired(ptype, query_buffer, pdCPU, pdGPU, cfg);
 		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, remaining_blocks);
 		query_buffer.waitForData(num_blocks);
 
