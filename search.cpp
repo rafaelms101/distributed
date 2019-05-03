@@ -108,8 +108,8 @@ static ProfileData getProfilingData(Config& cfg) {
 	file.open(file_path);
 	
 	if (! file.good()) {
-		std::printf("File prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
-		MPI_Abort(MPI_COMM_WORLD, -1);
+		std::printf("File prof/%d_%d_%d_%d_%d_%d not found", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+		std::exit(-1);
 	}
 
 	int total_size;
@@ -155,6 +155,8 @@ static ProfileData getProfilingData(Config& cfg) {
 	
 	assert(pd.max_block * cfg.block_size != BENCH_SIZE);
 	assert(pd.max_block <= cfg.eval_length);
+	
+	deb("min=%d, max=%d", pd.min_block * cfg.block_size, pd.max_block * cfg.block_size);
 	
 	return pd;
 }

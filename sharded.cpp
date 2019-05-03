@@ -13,7 +13,7 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
-		MPI_Abort(MPI_COMM_WORLD, -1);
+		std::exit(-1);
 	}
 
 	ProcType ptype = ProcType::Bench;
@@ -22,20 +22,20 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 	else if (!strcmp("s", argv[1])) ptype = ProcType::Static;
 	else {
 		std::printf("Invalid processing type.Expected b | s | d\n");
-		MPI_Abort(MPI_COMM_WORLD, -1);
+		std::exit(-1);
 	}
 
 	if (ptype == ProcType::Dynamic) {
 		if (argc != 3) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			MPI_Abort(MPI_COMM_WORLD, -1);
+			std::exit(-1);
 		}
 
 		cfg.query_rate = atof(argv[2]);
 	} else if (ptype == ProcType::Static) {
 		if (argc != 4) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			MPI_Abort(MPI_COMM_WORLD, -1);
+			std::exit(-1);
 		}
 
 		cfg.query_rate = atof(argv[2]);
