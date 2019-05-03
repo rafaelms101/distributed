@@ -101,7 +101,7 @@ namespace {
 	};
 }
 
-static ProfileData getProfilingData(Config& cfg, bool cpu, double max_gpu_time = 0) {	
+static ProfileData getProfilingData(Config& cfg, bool cpu, double& max_gpu_time) {	
 	char file_path[100];
 	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, cpu ? "cpu" : "gpu");
 	std::ifstream file;
@@ -131,6 +131,7 @@ static ProfileData getProfilingData(Config& cfg, bool cpu, double max_gpu_time =
 			if (times[nb] <= max_gpu_time) pd.max_block = nb;
 		}
 		
+		pd.min_block = 0;
 		cfg.max_cpu = pd.max_block;
 	} else {
 		double time_per_block[total_size + 1];
@@ -156,6 +157,7 @@ static ProfileData getProfilingData(Config& cfg, bool cpu, double max_gpu_time =
 		nb = total_size;
 		while (time_per_block[nb] > threshold) nb--;
 		pd.max_block = nb;
+		max_gpu_time = times[pd.max_block];
 
 		pd.times = new double[pd.min_block + 1];
 		pd.times[0] = 0;
@@ -315,8 +317,10 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	
 	ProfileData pdGPU, pdCPU; 
 	if (ptype == ProcType::Dynamic) {
-		pdGPU = getProfilingData(cfg, false);
-		pdCPU = getProfilingData(cfg, true, pdGPU.times[pdGPU.max_block]);
+		double max_gpu_time;
+		pdGPU = getProfilingData(cfg, false, max_gpu_time);
+		deb("MAX_GPU_TIME = %lf", max_gpu_time);
+		pdCPU = getProfilingData(cfg, true, max_gpu_time);
 	}
 
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
