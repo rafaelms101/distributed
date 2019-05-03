@@ -132,7 +132,7 @@ static ProfileData getProfilingData(Config& cfg, bool cpu, double& max_gpu_time)
 		}
 		
 		pd.min_block = 0;
-		cfg.max_cpu = pd.max_block;
+		cfg.max_cpu = pd.max_block * cfg.block_size;
 	} else {
 		double time_per_block[total_size + 1];
 		time_per_block[0] = 0;
@@ -163,7 +163,7 @@ static ProfileData getProfilingData(Config& cfg, bool cpu, double& max_gpu_time)
 		pd.times[0] = 0;
 		for (int nb = 1; nb <= pd.min_block; nb++) pd.times[nb] = times[nb];
 
-		cfg.max_gpu = pd.max_block;
+		cfg.max_gpu = pd.max_block * cfg.block_size;
 		
 		assert(pd.max_block * cfg.block_size != BENCH_SIZE);
 		assert(pd.max_block <= cfg.eval_length);
@@ -250,27 +250,30 @@ static std::pair<int, int> compute_split(int nq, ProcType ptype, Config& cfg) {
 	switch (ptype) {
 		case ProcType::Dynamic: {
 			nq_gpu = std::min(cfg.max_gpu, nq);
+			nq_cpu = std::min(cfg.max_cpu, nq - nq_gpu);
 			break;
 		}
 		case ProcType::Static: {
 			nq_gpu = static_cast<int>(nq * cfg.gpu_slice);
+			nq_cpu = nq - nq_gpu;
 			break;
 		}
 		case ProcType::Bench: {
 			nq_gpu = nq / 2;
+			nq_cpu = nq_gpu;
 			break;
 		}
 	}
 	
-	nq_cpu = nq - nq_gpu;
-	
 	return std::make_pair(nq_cpu, nq_gpu);
 }
 
-static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesCpu, std::vector<double>& procTimesGpu, Config& cfg) {
+static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index* gpu_index, int& nq, Buffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesCpu, std::vector<double>& procTimesGpu, Config& cfg) {
 	auto p = compute_split(nq, ptype, cfg);
 	int nq_cpu = p.first;
 	int nq_gpu = p.second;
+	
+	nq = nq_cpu + nq_gpu;
 	
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	
@@ -352,13 +355,14 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	while (! finished || query_buffer.entries() >= 1) {
 		int remaining_blocks = (cfg.test_length - qn) / cfg.block_size;
 		int num_blocks = numBlocksRequired(ptype, query_buffer, pdCPU, pdGPU, cfg);
-		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, remaining_blocks);
+		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, remaining_blocks + query_buffer.entries());
+		
 		query_buffer.waitForData(num_blocks);
 
 		int nqueries = num_blocks * cfg.block_size;
 		
-		deb("Processing %d queries", nqueries);
 		process_buffer(ptype, cpu_index, gpu_index, nqueries, query_buffer, I, D, procTimesCpu, procTimesGpu, cfg); 
+		deb("Processed %d queries", nqueries);
 		
 		label_buffer.transfer(I, num_blocks);
 		distance_buffer.transfer(D, num_blocks);
