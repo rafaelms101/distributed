@@ -157,9 +157,9 @@ static ProfileData getProfilingData(Config& cfg, bool cpu, double max_gpu_time =
 		while (time_per_block[nb] > threshold) nb--;
 		pd.max_block = nb;
 
-		pd.times = new double[minBlock + 1];
+		pd.times = new double[pd.min_block + 1];
 		pd.times[0] = 0;
-		for (int nb = 1; nb <= minBlock; nb++) pd.times[nb] = time_per_block[nb];
+		for (int nb = 1; nb <= pd.min_block; nb++) pd.times[nb] = times[nb];
 
 		cfg.max_gpu = pd.max_block;
 		
