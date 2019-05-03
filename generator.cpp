@@ -4,6 +4,7 @@
 #include <sys/mman.h>
 #include <cassert>
 #include <sys/stat.h>
+#include <random>
 
 static unsigned char* bvecs_read(const char *fname, size_t* filesize) {
 	FILE *f = fopen(fname, "rb");
@@ -65,6 +66,14 @@ static double constant_interval(double val) {
 	return val;
 }
 
+static double poisson_interval(double query_rate) {
+	static std::default_random_engine generator;
+	
+	std::exponential_distribution<double> distribution(0.001 / query_rate);
+	
+	return distribution(generator) / 1000;
+}
+
 static double fast_slow_fast_interval(int eval_length) {
 	constexpr double slow_time = 0.001;
 	constexpr double fast_time = 0.0001;
@@ -103,7 +112,7 @@ static std::pair<int, double> next_query(int test_length, Config& cfg) {
 	if (time_now < query_time) return {-1, -1};
 	
 	double old_time = query_time;
-	query_time = time_now + constant_interval(cfg.query_rate);
+	query_time = time_now + poisson_interval(cfg.query_rate);
 	
 	qty++;
 	
