@@ -27,6 +27,9 @@ struct Config {
 	
 	int processing_size;
 	double gpu_slice;
+	
+	int max_cpu;
+	int max_gpu;
 };
 
 #endif 
