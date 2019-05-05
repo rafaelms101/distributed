@@ -5,7 +5,7 @@
 #include <future>
 #include <fstream>
 #include <unistd.h>
- 
+
 #include "faiss/index_io.h"
 #include "faiss/IndexFlat.h"
 #include "faiss/IndexIVFPQ.h"
@@ -20,10 +20,10 @@
 
 static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* label_buffer, bool& finished_receiving, Config& cfg) {
 	deb("Receiver");
-	
+
 	long queries_received = 0;
 	long queries_sent = 0;
-	
+
 	float dummy;
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 
@@ -47,36 +47,36 @@ static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* 
 					MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
 					query_buffer->add(1);
 					queries_received += cfg.block_size;
-					
+
 					assert(status.MPI_ERROR == MPI_SUCCESS);
 				}
 			}
 		}
-		
+
 		auto ready = std::min(distance_buffer->entries(), label_buffer->entries());
 
 		if (ready >= 1) {
 			queries_sent += ready * cfg.block_size;
-			
+
 			faiss::Index::idx_t* label_ptr = reinterpret_cast<faiss::Index::idx_t*>(label_buffer->peekFront());
 			float* dist_ptr = reinterpret_cast<float*>(distance_buffer->peekFront());
-			
+
 			//TODO: Optimize this to an Immediate Synchronous Send
 			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
 			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
-			
+
 			label_buffer->consume(ready);
 			distance_buffer->consume(ready);
 		}
 	}
 
 	MPI_Ssend(&dummy, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-	deb("Finished receiving queries");	
+	deb("Finished receiving queries");
 }
 
 static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
 	deb("Started loading");
-	
+
 	char index_path[500];
 	sprintf(index_path, "%s/index_%d_%d_%d", INDEX_ROOT, cfg.nb, cfg.ncentroids, cfg.m);
 
@@ -101,12 +101,37 @@ namespace {
 	};
 }
 
-static ProfileData getProfilingData(Config& cfg, bool cpu, double& max_gpu_time) {	
-	char file_path[100];
+static std::pair<int, int> longest_contiguous_region(double min, double tolerance, double* time_per_block, int last_block) {
+	int start, bestStart, bestEnd;
+	int bestLength = 0;
+	int length = 0;
+
+	double threshold = min * (1 + tolerance);
+
+	for (int i = 1; i <= last_block; i++) {
+		if (time_per_block[i] <= threshold) {
+			length++;
+
+			if (length > bestLength) {
+				bestStart = start;
+				bestEnd = i;
+				bestLength = length;
+			}
+		} else {
+			start = i + 1;
+			length = 0;
+		}
+	}
+
+	return std::pair<int, int>(bestStart, bestEnd);
+}
+
+static ProfileData getProfilingData(Config& cfg, bool cpu, double& max_gpu_time) {
+  char file_path[100];
 	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, cpu ? "cpu" : "gpu");
 	std::ifstream file;
 	file.open(file_path);
-	
+
 	if (! file.good()) {
 		std::printf("File prof/%d_%d_%d_%d_%d_%d not found", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 		std::exit(-1);
@@ -114,25 +139,26 @@ static ProfileData getProfilingData(Config& cfg, bool cpu, double& max_gpu_time)
 
 	int total_size;
 	file >> total_size;
-	
+
 	double times[total_size + 1];
 	times[0] = 0;
-	
+
 	for (int i = 1; i <= total_size; i++) {
 		file >> times[i];
 	}
 
 	file.close();
-	
+
 	ProfileData pd;
-	
+
 	if (cpu) {
 		for (int nb = 1; nb <= total_size; nb++) {
 			if (times[nb] <= max_gpu_time) pd.max_block = nb;
 		}
-		
+
 		pd.min_block = 0;
 		cfg.max_cpu = pd.max_block * cfg.block_size;
+		deb("CPU max=%d", cfg.max_cpu);
 	} else {
 		double time_per_block[total_size + 1];
 		time_per_block[0] = 0;
@@ -148,36 +174,29 @@ static ProfileData getProfilingData(Config& cfg, bool cpu, double& max_gpu_time)
 			if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
 		}
 
-		double threshold = time_per_block[minBlock] * (1 + tolerance);
-
-		int nb = 1;
-		while (time_per_block[nb] > threshold) nb++;
-		pd.min_block = nb;
-
-		nb = total_size;
-		while (time_per_block[nb] > threshold) nb--;
-		pd.max_block = nb;
+		std::pair<int, int> limits = longest_contiguous_region(time_per_block[minBlock], 0.1, time_per_block, total_size);
+		pd.min_block = limits.first;
+		pd.max_block = limits.second;
+		
 		max_gpu_time = times[pd.max_block];
-
 		pd.times = new double[pd.min_block + 1];
 		pd.times[0] = 0;
 		for (int nb = 1; nb <= pd.min_block; nb++) pd.times[nb] = times[nb];
 
 		cfg.max_gpu = pd.max_block * cfg.block_size;
-		
+
+		deb("GPU min=%d, max=%d", pd.min_block * cfg.block_size, cfg.max_gpu);
+
 		assert(pd.max_block * cfg.block_size != BENCH_SIZE);
 		assert(pd.max_block <= cfg.eval_length);
 	}
-	
-	
-	deb("min=%d, max=%d", pd.min_block * cfg.block_size, pd.max_block * cfg.block_size);
-	
+
 	return pd;
 }
 
 static void store_profile_data(std::vector<double>& procTimes, bool cpu, Config& cfg) {
 	system("mkdir -p prof"); //to make sure that the "prof" dir exists
-	
+
 	//now we write the time data on a file
 	char file_path[100];
 	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%s", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, cpu ? "cpu" : "gpu");
@@ -209,9 +228,9 @@ static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdCPU,
 	switch (ptype) {
 		case ProcType::Dynamic: {
 			buffer.waitForData(1);
-			
+
 			int num_blocks = buffer.entries();
-			
+
 			if (num_blocks < pdGPU.min_block) {
 				double work_without_waiting = num_blocks / pdGPU.times[num_blocks];
 				double work_with_waiting = pdGPU.min_block / ((pdGPU.min_block - num_blocks) * buffer.block_rate() + pdGPU.times[pdGPU.min_block]);
@@ -239,14 +258,14 @@ static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdCPU,
 			return nb * 2;
 		}
 	}
-	
+
 	return 0;
 }
 
 static std::pair<int, int> compute_split(int nq, ProcType ptype, Config& cfg) {
 	int nq_cpu = 0;
 	int nq_gpu = 0;
-	
+
 	switch (ptype) {
 		case ProcType::Dynamic: {
 			nq_gpu = std::min(cfg.max_gpu, nq);
@@ -264,7 +283,7 @@ static std::pair<int, int> compute_split(int nq, ProcType ptype, Config& cfg) {
 			break;
 		}
 	}
-	
+
 	return std::make_pair(nq_cpu, nq_gpu);
 }
 
@@ -272,18 +291,18 @@ static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index
 	auto p = compute_split(nq, ptype, cfg);
 	int nq_cpu = p.first;
 	int nq_gpu = p.second;
-	
+
 	nq = nq_cpu + nq_gpu;
-	
+
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
-	
+
 	//now we proccess our query buffer
 	if (ptype == ProcType::Bench) {
 		static bool cpu_finished = false;
 		static bool gpu_finished = false;
-		
+
 		//TODO: consider having an always on thread, instead of always creating a new one
-		std::thread gpu_thread {[&] { 
+		std::thread gpu_thread {[&] {
 			if (! gpu_finished && nq_gpu >= 1) {
 				auto before = now();
 				gpu_index->search(nq_gpu, query_buffer + nq_cpu * cfg.d, cfg.k, D + nq_cpu * cfg.k, I + nq_cpu * cfg.k);
@@ -292,7 +311,7 @@ static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index
 				gpu_finished = time_spent >= 1;
 			}
 		}};
-		
+
 		if (! cpu_finished && nq_cpu >= 1) {
 			auto before = now();
 			cpu_index->search(nq_cpu, query_buffer, cfg.k, D, I);
@@ -300,15 +319,15 @@ static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index
 			procTimesCpu.push_back(time_spent);
 			cpu_finished = time_spent >= 1;
 		}
-		
+
 		gpu_thread.join();
 	} else {
 		std::thread gpu_thread { [&] {
 			if (nq_gpu >= 1) gpu_index->search(nq_gpu, query_buffer + nq_cpu * cfg.d, cfg.k, D + nq_cpu * cfg.k, I + nq_cpu * cfg.k);
 		}};
-		
+
 		if (nq_cpu >= 1) cpu_index->search(nq_cpu, query_buffer, cfg.k, D, I);
-		
+
 		gpu_thread.join();
 	}
 
@@ -317,64 +336,63 @@ static void process_buffer(ProcType ptype, faiss::Index* cpu_index, faiss::Index
 
 void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	std::vector<double> procTimesGpu, procTimesCpu;
-	
-	ProfileData pdGPU, pdCPU; 
+
+	ProfileData pdGPU, pdCPU;
 	if (ptype == ProcType::Dynamic) {
 		double max_gpu_time;
 		pdGPU = getProfilingData(cfg, false, max_gpu_time);
-		deb("MAX_GPU_TIME = %lf", max_gpu_time);
 		pdCPU = getProfilingData(cfg, true, max_gpu_time);
 	}
 
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	Buffer query_buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
-	
+
 	const long distance_block_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
 	const long label_block_size_in_bytes = sizeof(faiss::Index::idx_t) * cfg.k * cfg.block_size;
-	Buffer distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
-	Buffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
-	
+	Buffer distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB
+	Buffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB
+
 	faiss::gpu::StandardGpuResources res;
 	res.setTempMemory(1250 * 1024 * 1024);
 
 	auto cpu_index = load_index(shard, nshards, cfg);
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
-	
+
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
 	float* D = new float[cfg.eval_length * cfg.k];
-	
+
 	deb("Search node is ready");
-	
+
 	assert(cfg.test_length % cfg.block_size == 0);
 
 	int qn = 0;
 	bool finished = false;
-	
+
 	std::thread receiver { comm_handler, &query_buffer, &distance_buffer, &label_buffer, std::ref(finished), std::ref(cfg) };
-	
+
 	while (! finished || query_buffer.entries() >= 1) {
 		int remaining_blocks = (cfg.test_length - qn) / cfg.block_size;
 		int num_blocks = numBlocksRequired(ptype, query_buffer, pdCPU, pdGPU, cfg);
 		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, remaining_blocks + query_buffer.entries());
-		
+
 		query_buffer.waitForData(num_blocks);
 
 		int nqueries = num_blocks * cfg.block_size;
-		
-		process_buffer(ptype, cpu_index, gpu_index, nqueries, query_buffer, I, D, procTimesCpu, procTimesGpu, cfg); 
+
+		process_buffer(ptype, cpu_index, gpu_index, nqueries, query_buffer, I, D, procTimesCpu, procTimesGpu, cfg);
 		deb("Processed %d queries", nqueries);
-		
+
 		label_buffer.transfer(I, num_blocks);
 		distance_buffer.transfer(D, num_blocks);
 
 		qn += nqueries;
 	}
-	
+
 	receiver.join();
 
 	delete[] I;
 	delete[] D;
-	
+
 	if (ptype == ProcType::Bench) {
 		store_profile_data(procTimesGpu, false, cfg);
 		store_profile_data(procTimesCpu, true, cfg);
