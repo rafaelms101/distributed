@@ -101,6 +101,31 @@ namespace {
 	};
 }
 
+static std::pair<int, int> longest_contiguous_region(double min, double tolerance, double* time_per_block, int last_block) {
+	int start, bestStart, bestEnd;
+	int bestLength = 0;
+	int length = 0;
+	
+	double threshold = min * (1 + tolerance);
+	
+	for (int i = 1; i <= last_block; i++) {
+		if (time_per_block[i] <= threshold) {
+			length++;
+			
+			if (length > bestLength) {
+				bestStart = start;
+				bestEnd = i;
+				bestLength = length;
+			}
+		} else {
+			start = i + 1;
+			length = 0;
+		}
+	}
+	
+	return std::pair<int, int>(bestStart, bestEnd);
+}
+
 static ProfileData getProfilingData(Config& cfg) {	
 	char file_path[100];
 	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
@@ -139,24 +164,18 @@ static ProfileData getProfilingData(Config& cfg) {
 		if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
 	}
 
-	double threshold = time_per_block[minBlock] * (1 + tolerance);
-
-	int nb = 1;
-	while (time_per_block[nb] > threshold) nb++;
-	pd.min_block = nb;
-
-	nb = total_size;
-	while (time_per_block[nb] > threshold) nb--;
-	pd.max_block = nb;
+	std::pair<int, int> limits = longest_contiguous_region(time_per_block[minBlock], 0.1, time_per_block, total_size);
+	pd.min_block = limits.first;
+	pd.max_block = limits.second;
 
 	pd.times = new double[pd.min_block + 1];
 	pd.times[0] = 0;
 	for (int nb = 1; nb <= pd.min_block; nb++) pd.times[nb] = times[nb];
 	
+	deb("min=%d, max=%d", pd.min_block * cfg.block_size, pd.max_block * cfg.block_size);
+	
 	assert(pd.max_block * cfg.block_size != BENCH_SIZE);
 	assert(pd.max_block <= cfg.eval_length);
-	
-	deb("min=%d, max=%d", pd.min_block * cfg.block_size, pd.max_block * cfg.block_size);
 	
 	return pd;
 }
