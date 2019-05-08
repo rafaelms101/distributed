@@ -10,7 +10,7 @@
 
 ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 	std::map<std::string, RequestDistribution> m = { { "cs", RequestDistribution::Constant_Slow }, { "ca", RequestDistribution::Constant_Average }, { "cf",
-			RequestDistribution::Constant_Fast }, { "v", RequestDistribution::Variable_Poisson } };
+			RequestDistribution::Constant_Fast }, { "vp", RequestDistribution::Variable_Poisson } };
 	
 	std::string usage = "./sharded b | d <cs|ca|cf|vp> <min|max> | s <cs|ca|cf|vp> <queries_per_block>";
 

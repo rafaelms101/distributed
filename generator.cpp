@@ -67,12 +67,26 @@ static double constant_interval(double val) {
 	return val;
 }
 
-static double poisson_interval(double query_rate) {
+static double poisson_interval(double default_query_interval) {
+	static double changed_interval_at = 0;
+	static double current_query_interval = 0;
 	static std::default_random_engine generator;
 	
-	std::exponential_distribution<double> distribution(0.001 / query_rate);
+	static long long qty = 1;
+	static double total_time = 0;
 	
-	return distribution(generator) / 1000;
+	if (now() - changed_interval_at > 0.5) { //We change the query_rate every 0.5 secs
+		std::poisson_distribution<long long> rate_distribution((long long) (1 / default_query_interval));
+		auto queries_in_1_sec = rate_distribution(generator);
+		current_query_interval = 1.0 / queries_in_1_sec;
+		changed_interval_at = now();
+	}
+	
+	
+	total_time += current_query_interval;
+	qty++;
+	
+	return current_query_interval;
 }
 
 static double fast_slow_fast_interval(int eval_length) {
@@ -261,7 +275,7 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 				break;
 			}
 			case RequestDistribution::Variable_Poisson: {
-				//to be implemented
+				single_block_size_generator(nshards, poisson_interval, best_time_per_query / 0.5, cfg);
 				break;
 			}
 		}
