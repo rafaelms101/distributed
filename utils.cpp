@@ -5,6 +5,7 @@
 #include <cassert>
 #include <sys/stat.h>
 #include <cstring>
+#include <fstream>
 
 #include "config.h"
 

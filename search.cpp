@@ -127,11 +127,10 @@ static std::pair<int, int> longest_contiguous_region(double min, double toleranc
 }
 
 static ProfileData getProfilingData(Config& cfg) {	
-	std::vector<double> times(load_prof_times());
+	std::vector<double> times(load_prof_times(cfg));
 	
 	ProfileData pd;
 	std::vector<double> time_per_block(times.size());
-	time_per_block[0] = 0;
 
 	for (int i = 1; i < times.size(); i++) {
 		time_per_block[i] = times[i] / i;
@@ -154,7 +153,6 @@ static ProfileData getProfilingData(Config& cfg) {
 	
 	deb("min=%d, max=%d", pd.min_block * cfg.block_size, pd.max_block * cfg.block_size);
 	
-	assert(pd.max_block * cfg.block_size != BENCH_SIZE);
 	assert(pd.max_block <= cfg.eval_length);
 	
 	return pd;
@@ -207,7 +205,7 @@ static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdGPU,
 				}
 			}
 
-			return std::min(buffer.entries(), pdGPU.max_block);
+			return std::min(buffer.entries(), cfg.only_min ? pdGPU.min_block : pdGPU.max_block);
 		}
 		case ProcType::Static: {
 			return cfg.processing_size;

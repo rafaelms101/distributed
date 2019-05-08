@@ -5,6 +5,7 @@
 #include <cassert>
 #include <sys/stat.h>
 #include <random>
+#include <limits>
 
 static unsigned char* bvecs_read(const char *fname, size_t* filesize) {
 	FILE *f = fopen(fname, "rb");
@@ -101,7 +102,7 @@ static double fast_slow_fast_interval(int eval_length) {
 	return curr_time;
 }
 
-static std::pair<int, double> next_query(int test_length, Config& cfg) {
+static std::pair<int, double> next_query(int test_length, double (*next_interval)(double), double func_arg, Config& cfg) {
 	static int qty = 0;
 	static double query_time = now();
 	
@@ -112,7 +113,7 @@ static std::pair<int, double> next_query(int test_length, Config& cfg) {
 	if (time_now < query_time) return {-1, -1};
 	
 	double old_time = query_time;
-	query_time = time_now + poisson_interval(cfg.query_rate);
+	query_time = time_now + next_interval(func_arg);
 	
 	qty++;
 	
@@ -149,7 +150,7 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 }
 
 
-static void single_block_size_generator(int nshards, Config& cfg) {
+static void single_block_size_generator(int nshards, double (*next_interval)(double), double func_arg, Config& cfg) {
 	assert(cfg.test_length % cfg.block_size == 0);
 	
 	float* xq = load_queries(cfg.d, cfg.nq);
@@ -167,7 +168,7 @@ static void single_block_size_generator(int nshards, Config& cfg) {
 	bool first = true;
 	
 	while (true) {
-		std::pair<int, double> p = next_query(cfg.test_length, cfg);
+		std::pair<int, double> p = next_query(cfg.test_length, next_interval, func_arg, cfg);
 		auto id = p.first;
 		auto query_time = p.second;
 		
@@ -220,7 +221,21 @@ static void single_block_size_generator(int nshards, Config& cfg) {
 	delete [] xq;
 }
 
+//TODO: make generator a class
 void generator(int nshards, ProcType ptype, Config& cfg) {
+	double best_time_per_query = std::numeric_limits<double>::max();
+			
+	if (ptype != ProcType::Bench) {
+		std::vector<double> times(load_prof_times(cfg));
+		best_time_per_query = times[1];
+		for (int i = 2; i < times.size(); i++) {
+			double time_per_query = times[i] / (i * cfg.block_size);
+			if (time_per_query < best_time_per_query) best_time_per_query = time_per_query;
+		}
+		
+		deb("max_rate = %lf", best_time_per_query);
+	}
+	
 	int shards_ready = 0;
 	
 	//Waiting for search nodes to be ready
@@ -231,5 +246,24 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 	}
 
 	if (ptype == ProcType::Bench) bench_generator(BENCH_SIZE, nshards, cfg);
-	else single_block_size_generator(nshards, cfg);
+	else {
+		switch (cfg.request_distribution) {
+			case RequestDistribution::Constant_Slow: {
+				single_block_size_generator(nshards, constant_interval, best_time_per_query / 0.1, cfg);
+				break;
+			}
+			case RequestDistribution::Constant_Average: {
+				single_block_size_generator(nshards, constant_interval, best_time_per_query / 0.5, cfg);
+				break;
+			}
+			case RequestDistribution::Constant_Fast: {
+				single_block_size_generator(nshards, constant_interval, best_time_per_query / 1, cfg);
+				break;
+			}
+			case RequestDistribution::Variable_Poisson: {
+				//to be implemented
+				break;
+			}
+		}
+	}
 }

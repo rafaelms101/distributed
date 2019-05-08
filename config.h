@@ -1,11 +1,15 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-constexpr int BENCH_SIZE = 3000; //upper limit on maximum block size when in benchmark mode
+#include "utils.h"
+
+constexpr int BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
 
 constexpr char SRC_PATH[] = "/home/rafael/mestrado/bigann"; //folder where the bigann database is stored
 constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are stored
 constexpr int BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
+
+enum class RequestDistribution {Constant_Slow, Constant_Average, Constant_Fast, Variable_Poisson};
 
 struct Config {
 	//database config
@@ -18,13 +22,14 @@ struct Config {
 	//runtime config
 	int k = 10;
 	int nprobe = 16;
-	int block_size = 20;
+	int block_size = 5;
 	int test_length = 100000; //how many queries will be sent in total
 	int eval_length = 30000; //of the sent queries, how many will be used to compute the average response time
 	
 	//mode specific config
-	double query_rate;
+	RequestDistribution request_distribution;
 	int processing_size;
+	bool only_min;
 };
 
 #endif 

@@ -1,4 +1,4 @@
-#include <string>
+#include <cstring>
 #include <mpi.h>
 #include <cassert>
 
@@ -9,7 +9,10 @@
 #include "config.h"
 
 ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
-	std::string usage = "./sharded b | d <qr> | s <qr> <num_queries>";
+	std::map<std::string, RequestDistribution> m = { { "cs", RequestDistribution::Constant_Slow }, { "ca", RequestDistribution::Constant_Average }, { "cf",
+			RequestDistribution::Constant_Fast }, { "v", RequestDistribution::Variable_Poisson } };
+	
+	std::string usage = "./sharded b | d <cs|ca|cf|vp> <min|max> | s <cs|ca|cf|vp> <queries_per_block>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -26,19 +29,23 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 	}
 
 	if (ptype == ProcType::Dynamic) {
-		if (argc != 3) {
+		if (argc != 4) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
 
-		cfg.query_rate = atof(argv[2]);
+		std::string rd(argv[2]);
+		cfg.request_distribution = m[rd];
+		cfg.only_min = ! std::strcmp(argv[3], "min");
 	} else if (ptype == ProcType::Static) {
 		if (argc != 4) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
 
-		cfg.query_rate = atof(argv[2]);
+		std::string rd(argv[2]);
+		cfg.request_distribution = m[rd];
+		
 		int nq = atoi(argv[3]); 
 		assert(nq <= cfg.eval_length);
 		assert(nq % cfg.block_size == 0);
