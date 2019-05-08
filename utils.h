@@ -6,7 +6,7 @@
 
 #include "config.h"
 
-#define DEBUG
+//#define DEBUG
 
 #ifdef DEBUG
 	#define deb(...) do {std::printf("%lf) ", now()); std::printf(__VA_ARGS__); std::printf("\n");} while(0)
