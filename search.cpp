@@ -101,14 +101,14 @@ namespace {
 	};
 }
 
-static std::pair<int, int> longest_contiguous_region(double min, double tolerance, double* time_per_block, int last_block) {
+static std::pair<int, int> longest_contiguous_region(double min, double tolerance, std::vector<double>& time_per_block) {
 	int start, bestStart, bestEnd;
 	int bestLength = 0;
 	int length = 0;
 	
 	double threshold = min * (1 + tolerance);
 	
-	for (int i = 1; i <= last_block; i++) {
+	for (int i = 1; i < time_per_block.size(); i++) {
 		if (time_per_block[i] <= threshold) {
 			length++;
 			
@@ -127,44 +127,24 @@ static std::pair<int, int> longest_contiguous_region(double min, double toleranc
 }
 
 static ProfileData getProfilingData(Config& cfg) {	
-	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
-	std::ifstream file;
-	file.open(file_path);
-	
-	if (! file.good()) {
-		std::printf("File prof/%d_%d_%d_%d_%d_%d not found", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
-		std::exit(-1);
-	}
-
-	int total_size;
-	file >> total_size;
-	
-	double times[total_size + 1];
-	times[0] = 0;
-	
-	for (int i = 1; i <= total_size; i++) {
-		file >> times[i];
-	}
-
-	file.close();
+	std::vector<double> times(load_prof_times());
 	
 	ProfileData pd;
-	double time_per_block[total_size + 1];
+	std::vector<double> time_per_block(times.size());
 	time_per_block[0] = 0;
 
-	for (int i = 1; i <= total_size; i++) {
+	for (int i = 1; i < times.size(); i++) {
 		time_per_block[i] = times[i] / i;
 	}
 
 	double tolerance = 0.1;
 	int minBlock = 1;
 
-	for (int nb = 1; nb <= total_size; nb++) {
+	for (int nb = 1; nb < times.size(); nb++) {
 		if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
 	}
 
-	std::pair<int, int> limits = longest_contiguous_region(time_per_block[minBlock], 0.1, time_per_block, total_size);
+	std::pair<int, int> limits = longest_contiguous_region(time_per_block[minBlock], 0.1, time_per_block);
 	pd.min_block = limits.first;
 	pd.max_block = limits.second;
 

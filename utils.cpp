@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 #include <cstring>
 
+#include "config.h"
+
 double now() {
     struct timeval tv;
     gettimeofday (&tv, nullptr);
@@ -47,4 +49,31 @@ float * fvecs_read (const char *fname, int *d_out, int *n_out) {
 
     fclose(f);
     return x;
+}
+
+std::vector<double> load_prof_times(Config& cfg) {
+	char file_path[100];
+	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+	std::ifstream file;
+	file.open(file_path);
+
+	if (! file.good()) {
+		std::printf("File prof/%d_%d_%d_%d_%d_%d not found", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+		std::exit(- 1);
+	}
+
+	int total_size;
+	file >> total_size;
+
+	std::vector<double> times(total_size + 1);
+
+	times[0] = 0;
+
+	for (int i = 1; i <= total_size; i++) {
+		file >> times[i];
+	}
+
+	file.close();
+	
+	return times;
 }

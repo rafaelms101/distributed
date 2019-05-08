@@ -12,12 +12,14 @@
 #endif
 
 enum class ProcType {Static, Dynamic, Bench};
+enum class RequestDistribution {Constant_Slow, Constant_Average, Constant_Fast, Variable_Poisson};
 
 constexpr int AGGREGATOR = 0;
 constexpr int GENERATOR = 1;
 
 double now();
 int *ivecs_read(const char *fname, int *d_out, int *n_out);
-float * fvecs_read (const char *fname, int *d_out, int *n_out);
+float *fvecs_read (const char *fname, int *d_out, int *n_out);
+std::vector<double> load_prof_times(); 
 
 #endif /* UTILS_H_ */
