@@ -76,6 +76,8 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 }
 
 int main(int argc, char* argv[]) {
+	srand(time(NULL));
+	
 	Config cfg;
 
 	MPI_Init(&argc, &argv);
