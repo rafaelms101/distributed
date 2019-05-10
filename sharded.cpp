@@ -9,10 +9,7 @@
 #include "config.h"
 
 ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
-	std::map<std::string, RequestDistribution> m = { { "cs", RequestDistribution::Constant_Slow }, { "ca", RequestDistribution::Constant_Average }, { "cf",
-			RequestDistribution::Constant_Fast }, { "vp", RequestDistribution::Variable_Poisson } };
-	
-	std::string usage = "./sharded b | d <cs|ca|cf|vp> <min|max> | s <cs|ca|cf|vp> <queries_per_block>";
+	std::string usage = "./sharded b | d <c|p> <factor> <min|max> | s <c|p> <factor> <queries_per_block>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -20,33 +17,53 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 	}
 
 	ProcType ptype = ProcType::Bench;
-	if (!strcmp("d", argv[1])) ptype = ProcType::Dynamic;
-	else if (!strcmp("b", argv[1])) ptype = ProcType::Bench;
-	else if (!strcmp("s", argv[1])) ptype = ProcType::Static;
+	if (! strcmp("d", argv[1])) ptype = ProcType::Dynamic;
+	else if (! strcmp("b", argv[1])) ptype = ProcType::Bench;
+	else if (! strcmp("s", argv[1])) ptype = ProcType::Static;
 	else {
 		std::printf("Invalid processing type.Expected b | s | d\n");
 		std::exit(-1);
 	}
 
 	if (ptype == ProcType::Dynamic) {
-		if (argc != 4) {
+		if (argc != 5) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
 
-		std::string rd(argv[2]);
-		cfg.request_distribution = m[rd];
-		cfg.only_min = ! std::strcmp(argv[3], "min");
-	} else if (ptype == ProcType::Static) {
-		if (argc != 4) {
+		if (! std::strcmp(argv[2], "c")) {
+			cfg.request_distribution = RequestDistribution::Constant;
+		} else if (! std::strcmp(argv[2], "p")) {
+			cfg.request_distribution = RequestDistribution::Variable_Poisson;
+		} else {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
-
-		std::string rd(argv[2]);
-		cfg.request_distribution = m[rd];
 		
-		int nq = atoi(argv[3]); 
+		cfg.load_factor = std::atof(argv[3]);
+		
+		assert(cfg.load_factor <= 1);
+		
+		cfg.only_min = ! std::strcmp(argv[4], "min");
+	} else if (ptype == ProcType::Static) {
+		if (argc != 5) {
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::exit(-1);
+		}
+
+		if (! std::strcmp(argv[2], "c")) {
+			cfg.request_distribution = RequestDistribution::Constant;
+		} else if (! std::strcmp(argv[2], "p")) {
+			cfg.request_distribution = RequestDistribution::Variable_Poisson;
+		} else {
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::exit(- 1);
+		}
+
+		cfg.load_factor = std::atof(argv[3]);
+		assert(cfg.load_factor <= 1);
+		
+		int nq = atoi(argv[4]); 
 		assert(nq <= cfg.eval_length);
 		assert(nq % cfg.block_size == 0);
 		cfg.processing_size = nq / cfg.block_size;

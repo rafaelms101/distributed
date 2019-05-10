@@ -247,7 +247,7 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 			if (time_per_query < best_time_per_query) best_time_per_query = time_per_query;
 		}
 		
-		deb("max_rate = %lf", best_time_per_query);
+		deb("min_interval = %lf", best_time_per_query);
 	}
 	
 	int shards_ready = 0;
@@ -262,20 +262,12 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 	if (ptype == ProcType::Bench) bench_generator(BENCH_SIZE, nshards, cfg);
 	else {
 		switch (cfg.request_distribution) {
-			case RequestDistribution::Constant_Slow: {
-				single_block_size_generator(nshards, constant_interval, best_time_per_query / SLOW_RATE_MULT, cfg);
-				break;
-			}
-			case RequestDistribution::Constant_Average: {
-				single_block_size_generator(nshards, constant_interval, best_time_per_query / AVERAGE_RATE_MULT, cfg);
-				break;
-			}
-			case RequestDistribution::Constant_Fast: {
-				single_block_size_generator(nshards, constant_interval, best_time_per_query / FAST_RATE_MULT, cfg);
+			case RequestDistribution::Constant: {
+				single_block_size_generator(nshards, constant_interval, best_time_per_query / cfg.load_factor, cfg);
 				break;
 			}
 			case RequestDistribution::Variable_Poisson: {
-				single_block_size_generator(nshards, poisson_interval, best_time_per_query / AVERAGE_RATE_MULT, cfg);
+				single_block_size_generator(nshards, poisson_interval, best_time_per_query / cfg.load_factor, cfg);
 				break;
 			}
 		}

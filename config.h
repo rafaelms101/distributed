@@ -13,7 +13,7 @@ constexpr double SLOW_RATE_MULT = 0.1;
 constexpr double AVERAGE_RATE_MULT = 0.5;
 constexpr double FAST_RATE_MULT = 1;
 
-enum class RequestDistribution {Constant_Slow, Constant_Average, Constant_Fast, Variable_Poisson};
+enum class RequestDistribution {Constant, Variable_Poisson};
 
 struct Config {
 	//database config
@@ -32,6 +32,7 @@ struct Config {
 	
 	//mode specific config
 	RequestDistribution request_distribution;
+	double load_factor;
 	int processing_size;
 	bool only_min;
 };
