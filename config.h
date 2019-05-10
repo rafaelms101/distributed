@@ -9,10 +9,6 @@ constexpr char SRC_PATH[] = "/home/rafael/mestrado/bigann"; //folder where the b
 constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are stored
 constexpr int BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
 
-constexpr double SLOW_RATE_MULT = 0.1;
-constexpr double AVERAGE_RATE_MULT = 0.5;
-constexpr double FAST_RATE_MULT = 1;
-
 enum class RequestDistribution {Constant, Variable_Poisson};
 
 struct Config {
