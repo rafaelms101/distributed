@@ -168,6 +168,26 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 	send_finished_signal(nshards);
 }
 
+static void compute_stats(double* start_time, double* end_time, Config& cfg) {
+	double total = 0;
+
+	for (int i = 0; i < cfg.eval_length; i++) {
+		total += end_time[i] - start_time[i];
+	}
+	
+	double avg = total / cfg.eval_length; 
+	double sd = 0;
+	total = 0;
+	
+	for (int i = 0; i < cfg.eval_length; i++) {
+		double diff = (end_time[i] - start_time[i]) - avg;
+		total += diff * diff;
+	}
+	
+	sd = std::sqrt(total / cfg.eval_length);
+
+	std::printf("%lf %lf\n", avg, sd);
+}
 
 static void single_block_size_generator(int nshards, double (*next_interval)(double), double func_arg, Config& cfg) {
 	assert(cfg.test_length % cfg.block_size == 0);
@@ -228,13 +248,7 @@ static void single_block_size_generator(int nshards, double (*next_interval)(dou
 	MPI_Recv(end_time, cfg.eval_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
 			MPI_STATUS_IGNORE);
 
-	double total = 0;
-
-	for (int i = 0; i < cfg.eval_length; i++) {
-		total += end_time[i] - start_time[i];
-	}
-
-	std::printf("%lf\n", total / cfg.eval_length);
+	compute_stats(start_time, end_time, cfg);
 	
 	delete [] to_be_deleted;
 	delete [] xq;
