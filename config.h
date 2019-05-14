@@ -15,7 +15,7 @@ struct Config {
 	//database config
 	int d = 128; //vector dimension
 	int nb = 500000000; //database size
-	int ncentroids = 8192; //number of centroids
+	int ncentroids = 65536; //number of centroids
 	int m = 8; //vector size after compression, in bytes
 	int nq = 10000; //total number of distinct queries
 	
