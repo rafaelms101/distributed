@@ -68,30 +68,10 @@ static double constant_interval(double val) {
 }
 
 static double poisson_interval(double mean_interval) {
-	static double changed_interval_at = 0;
-	static double current_query_interval = 0;
-	static std::default_random_engine generator(rand());
-	static long long queries_per_second = static_cast<long long>(1 / mean_interval);
-	static double scale_factor = queries_per_second / 5.0;
-	static std::poisson_distribution<long long> rate_distribution(5);
+	double r = 0;
 	
-	static long long qty = 1;
-	static double total_time = 0;
-	
-	if (now() - changed_interval_at > 0.1) { //We change the query_rate every 0.1 secs
-		double queries_in_1_sec;
-		do {
-			queries_in_1_sec = rate_distribution(generator) * scale_factor;  
-		} while (queries_in_1_sec == 0);
-		current_query_interval = 1.0 / queries_in_1_sec;
-		changed_interval_at = now();
-	}
-	
-	
-	total_time += current_query_interval;
-	qty++;
-	
-	return current_query_interval;
+	while (r == 0) r = static_cast<double>(rand()) / RAND_MAX;
+	return -std::log(r) * mean_interval;
 }
 
 static double fast_slow_fast_interval(int eval_length) {
