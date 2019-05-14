@@ -121,18 +121,14 @@ static double fast_slow_fast_interval(int eval_length) {
 	return curr_time;
 }
 
-static std::pair<int, double> next_query(int test_length, double (*next_interval)(double), double func_arg, Config& cfg) {
+static int next_query(const int test_length, const double begin, double* start_query_time, Config& cfg) {
 	static int qty = 0;
-	static double query_time = now();
 	
 	double time_now = now();
 	
-	if (qty >= test_length) return {-2, -1};
+	if (qty >= test_length) return -2;
 	
-	if (time_now < query_time) return {-1, -1};
-	
-	double old_time = query_time;
-	query_time = time_now + next_interval(func_arg);
+	if (time_now < begin + start_query_time[qty]) return -1;
 	
 	qty++;
 	
@@ -140,7 +136,7 @@ static std::pair<int, double> next_query(int test_length, double (*next_interval
 		deb("Sent %d/%d queries", qty, test_length);
 	}
 	
-	return {(qty - 1) % cfg.nq, old_time}; 
+	return (qty - 1) % cfg.nq; 
 }
 
 static void send_finished_signal(int nshards) {
@@ -189,31 +185,20 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 	std::printf("%lf %lf\n", avg, sd);
 }
 
-static void single_block_size_generator(int nshards, double (*next_interval)(double), double func_arg, Config& cfg) {
+static void single_block_size_generator(int nshards, double* query_start_time, Config& cfg) {
 	assert(cfg.test_length % cfg.block_size == 0);
 	
 	float* xq = load_queries(cfg.d, cfg.nq);
-
-	double start_time[cfg.eval_length], end_time[cfg.eval_length];
-	
-	int begin_timing = cfg.test_length - cfg.eval_length + 1;
-
 	float* query_buffer = new float[cfg.test_length * cfg.d];
 	float* to_be_deleted = query_buffer;
-
 	int queries_in_buffer = 0;
 	int qn = 0;
-	
-	bool first = true;
+	const double begin_time = now();
 	
 	while (true) {
-		std::pair<int, double> p = next_query(cfg.test_length, next_interval, func_arg, cfg);
-		auto id = p.first;
-		auto query_time = p.second;
-		
-		if (id == -1) {
-			continue;
-		}
+		auto id = next_query(cfg.test_length, begin_time, query_start_time, cfg);
+
+		if (id == -1) continue;
 			
 		if (id == -2) {
 			if (queries_in_buffer >= 1) send_queries(nshards, query_buffer, queries_in_buffer, cfg.d);
@@ -222,36 +207,41 @@ static void single_block_size_generator(int nshards, double (*next_interval)(dou
 
 		qn++;
 		
-		if (qn >= begin_timing) {
-			int offset = qn - begin_timing;
-			start_time[offset] = query_time;
-		}
-		
 		memcpy(query_buffer + queries_in_buffer * cfg.d, xq + id * cfg.d, cfg.d * sizeof(float));
 		queries_in_buffer++;
 
 		if (queries_in_buffer < cfg.block_size) continue;
 
-		
-		if (first) {
-			first = false;
-			deb("First block sent");
-		}
 		send_queries(nshards, query_buffer, queries_in_buffer, cfg.d);
-		
 		query_buffer = query_buffer + queries_in_buffer * cfg.d;
 		queries_in_buffer = 0;
 	}
 
 	send_finished_signal(nshards);
 	
-	MPI_Recv(end_time, cfg.eval_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD,
-			MPI_STATUS_IGNORE);
+	double end_time[cfg.eval_length];
+	MPI_Recv(end_time, cfg.eval_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-	compute_stats(start_time, end_time, cfg);
+	for (int i = 0; i < cfg.test_length; i++) {
+		query_start_time[i] = begin_time + query_start_time[i];
+	}
+	
+	compute_stats(&query_start_time[cfg.test_length - cfg.eval_length], end_time, cfg);
 	
 	delete [] to_be_deleted;
 	delete [] xq;
+}
+
+static double* query_start_time(double (*next_interval)(double), double param, Config& cfg) {
+	double* query_start = new double[cfg.test_length];
+	double time = 0;
+	
+	for (int i = 0; i < cfg.test_length; i++) {
+		query_start[i] = time;
+		time += next_interval(param);
+	}
+	
+	return query_start;
 }
 
 //TODO: make generator a class
@@ -269,6 +259,21 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 		deb("min_interval = %lf", best_time_per_query);
 	}
 	
+	double* query_start;
+	
+	if (ptype != ProcType::Bench) {
+		switch (cfg.request_distribution) {
+			case RequestDistribution::Constant: {
+				query_start = query_start_time(constant_interval, best_time_per_query / cfg.load_factor, cfg);
+				break;
+			}
+			case RequestDistribution::Variable_Poisson: {
+				query_start = query_start_time(poisson_interval, best_time_per_query / cfg.load_factor, cfg);
+				break;
+			}
+		}
+	}
+	
 	int shards_ready = 0;
 	
 	//Waiting for search nodes to be ready
@@ -279,16 +284,5 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 	}
 
 	if (ptype == ProcType::Bench) bench_generator(BENCH_SIZE, nshards, cfg);
-	else {
-		switch (cfg.request_distribution) {
-			case RequestDistribution::Constant: {
-				single_block_size_generator(nshards, constant_interval, best_time_per_query / cfg.load_factor, cfg);
-				break;
-			}
-			case RequestDistribution::Variable_Poisson: {
-				single_block_size_generator(nshards, poisson_interval, best_time_per_query / cfg.load_factor, cfg);
-				break;
-			}
-		}
-	}
+	else single_block_size_generator(nshards, query_start, cfg);
 }
