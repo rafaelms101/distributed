@@ -42,7 +42,6 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 		
 		cfg.load_factor = std::atof(argv[3]);
 		
-		assert(cfg.load_factor <= 1);
 		
 		cfg.only_min = ! std::strcmp(argv[4], "min");
 	} else if (ptype == ProcType::Static) {
@@ -61,7 +60,6 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 		}
 
 		cfg.load_factor = std::atof(argv[3]);
-		assert(cfg.load_factor <= 1);
 		
 		int nq = atoi(argv[4]); 
 		assert(nq <= cfg.eval_length);
