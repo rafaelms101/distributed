@@ -23,8 +23,8 @@ struct Config {
 	int k = 10;
 	int nprobe = 16;
 	int block_size = 5;
-	int test_length = 100000; //how many queries will be sent in total
-	int eval_length = 30000; //of the sent queries, how many will be used to compute the average response time
+	int test_length = 500000; //how many queries will be sent in total
+	int eval_length = 450000; //of the sent queries, how many will be used to compute the average response time
 	
 	//mode specific config
 	RequestDistribution request_distribution;

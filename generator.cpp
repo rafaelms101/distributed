@@ -74,6 +74,26 @@ static double poisson_interval(double mean_interval) {
 	return -std::log(r) * mean_interval;
 }
 
+static double poisson_constant_interval(double mean_interval) {
+	constexpr int interval_length = 1000; 
+	static int nq = interval_length;
+	static double current_interval = 0;
+	
+	nq++;
+	
+	if (nq > interval_length) {
+		double r = 0;
+
+		while (r == 0 || r == 1) r = static_cast<double>(rand()) / RAND_MAX;
+		current_interval = - std::log(r) * mean_interval;
+		nq = 1;
+		
+		deb("changed interval to %lf", current_interval);
+	}
+	
+	return current_interval;
+}
+
 static double fast_slow_fast_interval(int eval_length) {
 	constexpr double slow_time = 0.001;
 	constexpr double fast_time = 0.0001;
@@ -242,13 +262,15 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 	double* query_start;
 	
 	if (ptype != ProcType::Bench) {
+		deb("mean interval is %lf", best_time_per_query / cfg.load_factor);
+		
 		switch (cfg.request_distribution) {
 			case RequestDistribution::Constant: {
 				query_start = query_start_time(constant_interval, best_time_per_query / cfg.load_factor, cfg);
 				break;
 			}
 			case RequestDistribution::Variable_Poisson: {
-				query_start = query_start_time(poisson_interval, best_time_per_query / cfg.load_factor, cfg);
+				query_start = query_start_time(poisson_constant_interval, best_time_per_query / cfg.load_factor, cfg);
 				break;
 			}
 		}
