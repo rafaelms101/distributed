@@ -16,7 +16,7 @@ FAISS_LIB = $(FAISS_HOME)/libfaiss.a
 %.o: %.cpp *.h
 	$(CXX) -g $(OPT) $(CPPFLAGS) -o $@ -c $< $(FAISS_INCLUDE)
 
-sharded: utils.o readSplittedIndex.o generator.o search.o aggregator.o Buffer.o sharded.o $(FAISS_LIB)
+sharded: config.o utils.o readSplittedIndex.o generator.o search.o aggregator.o Buffer.o sharded.o $(FAISS_LIB)
 	mpic++ -std=c++11 $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 train: train.o $(FAISS_LIB)

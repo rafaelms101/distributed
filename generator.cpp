@@ -75,22 +75,21 @@ static double poisson_interval(double mean_interval) {
 }
 
 static double poisson_constant_interval(double mean_interval) {
-	constexpr int interval_length = 1000; 
-	static int nq = interval_length;
+	static int interval_length = cfg.test_length / 100;
+	static int nq = interval_length + 1;
 	static double current_interval = 0;
-	
-	nq++;
 	
 	if (nq > interval_length) {
 		double r = 0;
-
 		while (r == 0 || r == 1) r = static_cast<double>(rand()) / RAND_MAX;
 		current_interval = - std::log(r) * mean_interval;
+		assert(current_interval != 0);
 		nq = 1;
-		
-		deb("changed interval to %lf", current_interval);
+		static int qty = 0;
+//		std::printf("changed to %lf[%d]\n", current_interval, ++qty);
 	}
 	
+	nq++;
 	return current_interval;
 }
 

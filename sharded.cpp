@@ -8,7 +8,7 @@
 #include "utils.h"
 #include "config.h"
 
-ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
+ProcType handle_parameters(int argc, char* argv[]) {
 	std::string usage = "./sharded b | d <c|p> <factor> <min|max> | s <c|p> <factor> <queries_per_block>";
 
 	if (argc < 2) {
@@ -74,16 +74,15 @@ ProcType handle_parameters(int argc, char* argv[], Config& cfg) {
 }
 
 int main(int argc, char* argv[]) {
-	srand(time(NULL));
-	
-	Config cfg;
+	srand(42);
+//	srand(time(NULL));
 
 	MPI_Init(&argc, &argv);
 
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	
-	ProcType ptype = handle_parameters(argc, argv, cfg);
+	ProcType ptype = handle_parameters(argc, argv);
 
     // Get the number of processes
     int world_size;

@@ -1,8 +1,6 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-#include "utils.h"
-
 constexpr int BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
 
 constexpr char SRC_PATH[] = "/home/rafael/mestrado/bigann"; //folder where the bigann database is stored
@@ -32,5 +30,7 @@ struct Config {
 	int processing_size;
 	bool only_min;
 };
+
+extern Config cfg;
 
 #endif 
