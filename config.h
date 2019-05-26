@@ -9,6 +9,8 @@ constexpr int BENCH_REPEATS = 3; //number of times that a certain number of quer
 
 enum class RequestDistribution {Constant, Variable_Poisson};
 
+class ExecPolicy;
+
 struct Config {
 	//database config
 	int d = 128; //vector dimension
@@ -31,6 +33,8 @@ struct Config {
 	double load_factor;
 	int processing_size;
 	bool only_min;
+	
+	ExecPolicy* exec_policy = nullptr;
 };
 
 extern Config cfg;

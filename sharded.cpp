@@ -7,9 +7,10 @@
 #include "aggregator.h"
 #include "utils.h"
 #include "config.h"
+#include "ExecPolicy.h"
 
 ProcType handle_parameters(int argc, char* argv[]) {
-	std::string usage = "./sharded b | d <c|p> <factor> <min|max> | s <c|p> <factor> <queries_per_block>";
+	std::string usage = "./sharded b | d <c|p> <load> <min|max|q|gmin> | s <c|p> <load> <queries_per_block>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -43,7 +44,15 @@ ProcType handle_parameters(int argc, char* argv[]) {
 		cfg.load_factor = std::atof(argv[3]);
 		
 		
-		cfg.only_min = ! std::strcmp(argv[4], "min");
+		if (! std::strcmp(argv[4], "min")) {
+			cfg.exec_policy = new MinExecPolicy;
+		} else if (! std::strcmp(argv[4], "max")) {
+			cfg.exec_policy = new MaxExecPolicy;
+		} else if (! std::strcmp(argv[4], "q")) {
+			cfg.exec_policy = new QueueExecPolicy;
+		} else if (! std::strcmp(argv[4], "gmin")) {
+			cfg.exec_policy = new MinGreedyExecPolicy;
+		} 
 	} else if (ptype == ProcType::Static) {
 		if (argc != 5) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -65,8 +74,10 @@ ProcType handle_parameters(int argc, char* argv[]) {
 		assert(nq <= cfg.eval_length);
 		assert(nq % cfg.block_size == 0);
 		cfg.processing_size = nq / cfg.block_size;
+		
+		cfg.exec_policy = new StaticExecPolicy(cfg.processing_size);
 	} else if (ptype == ProcType::Bench) {
-		//nothing
+		cfg.exec_policy = new BenchExecPolicy;
 		assert(BENCH_SIZE <= cfg.eval_length);
 	}
 

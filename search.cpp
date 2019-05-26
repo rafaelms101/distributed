@@ -17,6 +17,7 @@
 #include "utils.h"
 #include "Buffer.h"
 #include "readSplittedIndex.h"
+#include "ExecPolicy.h"
 
 static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* label_buffer, bool& finished_receiving, Config& cfg) {
 	deb("Receiver");
@@ -92,73 +93,6 @@ static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
 	return cpu_index;
 }
 
-//TODO: currently, we use the same files in all nodes. This doesn't work with ProfileData, since each machine is different. Need to create a way for each node to load a different file.
-namespace {
-	struct ProfileData {
-		double* times;
-		int min_block;
-		int max_block;
-	};
-}
-
-static std::pair<int, int> longest_contiguous_region(double min, double tolerance, std::vector<double>& time_per_block) {
-	int start, bestStart, bestEnd;
-	int bestLength = 0;
-	int length = 0;
-	
-	double threshold = min * (1 + tolerance);
-	
-	for (int i = 1; i < time_per_block.size(); i++) {
-		if (time_per_block[i] <= threshold) {
-			length++;
-			
-			if (length > bestLength) {
-				bestStart = start;
-				bestEnd = i;
-				bestLength = length;
-			}
-		} else {
-			start = i + 1;
-			length = 0;
-		}
-	}
-	
-	return std::pair<int, int>(bestStart, bestEnd);
-}
-
-static ProfileData getProfilingData(Config& cfg) {	
-	std::vector<double> times(load_prof_times(cfg));
-	
-	ProfileData pd;
-	std::vector<double> time_per_block(times.size());
-
-	for (int i = 1; i < times.size(); i++) {
-		time_per_block[i] = times[i] / i;
-	}
-
-	double tolerance = 0.1;
-	int minBlock = 1;
-
-	for (int nb = 1; nb < times.size(); nb++) {
-		if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
-	}
-
-	std::pair<int, int> limits = longest_contiguous_region(time_per_block[minBlock], 0.1, time_per_block);
-	pd.min_block = limits.first;
-	pd.max_block = limits.second;
-
-	pd.times = new double[pd.min_block + 1];
-	pd.times[0] = 0;
-	for (int nb = 1; nb <= pd.min_block; nb++) pd.times[nb] = times[nb];
-	
-	deb("min=%d, max=%d", pd.min_block * cfg.block_size, pd.max_block * cfg.block_size);
-	
-	assert(pd.max_block <= cfg.eval_length);
-	
-	return pd;
-}
-
-
 static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
 	system("mkdir -p prof"); //to make sure that the "prof" dir exists
 	
@@ -189,44 +123,6 @@ static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
 	file.close();
 }
 
-static int numBlocksRequired(ProcType ptype, Buffer& buffer, ProfileData& pdGPU, Config& cfg) {
-	switch (ptype) {
-		case ProcType::Dynamic: {
-			buffer.waitForData(1);
-			
-			int num_blocks = buffer.entries();
-			
-			if (num_blocks < pdGPU.min_block) {
-				double work_without_waiting = num_blocks / pdGPU.times[num_blocks];
-				double work_with_waiting = pdGPU.min_block / ((pdGPU.min_block - num_blocks) * buffer.block_rate() + pdGPU.times[pdGPU.min_block]);
-
-				if (work_with_waiting > work_without_waiting) {
-					usleep((pdGPU.min_block - num_blocks) * buffer.block_rate() * 1000000);
-				}
-			}
-
-			return std::min(buffer.entries(), cfg.only_min ? pdGPU.min_block : pdGPU.max_block);
-		}
-		case ProcType::Static: {
-			return cfg.processing_size;
-		}
-		case ProcType::Bench: {
-			static int nrepeats = 0;
-			static int nb = 1;
-
-			if (nrepeats >= BENCH_REPEATS) {
-				nrepeats = 0;
-				nb++;
-			}
-
-			nrepeats++;
-			return nb;
-		}
-	}
-	
-	return 0;
-}
-
 static void process_buffer(ProcType ptype, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesGpu, Config& cfg) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	
@@ -250,8 +146,7 @@ static void process_buffer(ProcType ptype, faiss::Index* gpu_index, int nq, Buff
 void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	std::vector<double> procTimesGpu;
 	
-	ProfileData pdGPU; 
-	if (ptype == ProcType::Dynamic) pdGPU = getProfilingData(cfg);
+	cfg.exec_policy->setup();
 
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	Buffer query_buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
@@ -281,7 +176,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	
 	while (! finished || query_buffer.entries() >= 1) {
 		int remaining_blocks = (cfg.test_length - qn) / cfg.block_size;
-		int num_blocks = numBlocksRequired(ptype, query_buffer, pdGPU, cfg);
+		int num_blocks = cfg.exec_policy->numBlocksRequired(ptype, query_buffer, cfg);
 		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, remaining_blocks);
 		query_buffer.waitForData(num_blocks);
 
