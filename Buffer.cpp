@@ -18,7 +18,7 @@ Buffer::~Buffer() {
 	delete[] data;
 }
 
-double Buffer::block_rate() {
+double Buffer::block_interval() {
 	std::unique_lock<std::mutex> { mutex };
 	return time_between_blocks;
 }

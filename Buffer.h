@@ -12,7 +12,7 @@ public:
 	Buffer(const long block_size, const long num_entries);
 	~Buffer();
 
-	double block_rate();
+	double block_interval();
 	void add(const long qty = 1);
 	unsigned char* peekFront();
 	unsigned char* peekEnd();
