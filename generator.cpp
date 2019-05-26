@@ -75,7 +75,7 @@ static double poisson_interval(double mean_interval) {
 }
 
 static double poisson_constant_interval(double mean_interval) {
-	static int interval_length = cfg.test_length / 100;
+	static int interval_length = cfg.test_length / cfg.poisson_intervals;
 	static int nq = interval_length + 1;
 	static double current_interval = 0;
 	
@@ -85,8 +85,8 @@ static double poisson_constant_interval(double mean_interval) {
 		current_interval = - std::log(r) * mean_interval;
 		assert(current_interval != 0);
 		nq = 1;
-		static int qty = 0;
-//		std::printf("changed to %lf[%d]\n", current_interval, ++qty);
+		
+		std::printf("%.8lf\n", current_interval);
 	}
 	
 	nq++;
@@ -164,24 +164,24 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 }
 
 static void compute_stats(double* start_time, double* end_time, Config& cfg) {
+	double aggregate_total = 0;
 	double total = 0;
-
-	for (int i = 0; i < cfg.eval_length; i++) {
-		total += end_time[i] - start_time[i];
+	int idx = 0;
+	int interval_size = cfg.eval_length / cfg.poisson_intervals;
+	
+	for (int i = 1; i <= cfg.poisson_intervals; i++) {
+		double total = 0;
+		
+		for (int j = 1; j <= interval_size; j++) {
+			total += end_time[idx] - start_time[idx];
+			idx++;
+		}
+		
+//		std::printf("%lf\n", total / interval_size);
+		aggregate_total += total;
 	}
-	
-	double avg = total / cfg.eval_length; 
-	double sd = 0;
-	total = 0;
-	
-	for (int i = 0; i < cfg.eval_length; i++) {
-		double diff = (end_time[i] - start_time[i]) - avg;
-		total += diff * diff;
-	}
-	
-	sd = std::sqrt(total / cfg.eval_length);
 
-	std::printf("%lf %lf\n", avg, sd);
+	std::printf("mean rt: %lf\n", aggregate_total / cfg.eval_length);
 }
 
 static void single_block_size_generator(int nshards, double* query_start_time, Config& cfg) {
@@ -255,6 +255,7 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 			if (time_per_query < best_time_per_query) best_time_per_query = time_per_query;
 		}
 		
+		std::printf("mean interval: %.8lf\n", best_time_per_query / cfg.load_factor);
 		deb("min_interval = %lf", best_time_per_query);
 	}
 	

@@ -24,6 +24,8 @@ struct Config {
 	int test_length = 500000; //how many queries will be sent in total
 	int eval_length = 450000; //of the sent queries, how many will be used to compute the average response time
 	
+	int poisson_intervals = 100;
+	
 	//mode specific config
 	RequestDistribution request_distribution;
 	double load_factor;
