@@ -22,7 +22,7 @@ sharded: config.o utils.o readSplittedIndex.o generator.o search.o aggregator.o 
 train: train.o $(FAISS_LIB)
 	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
-simple: simple.o $(FAISS_LIB)
+simple: readSplittedIndex.o simple.o $(FAISS_LIB)
 	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 recall: recall.o $(FAISS_LIB)
