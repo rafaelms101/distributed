@@ -10,7 +10,7 @@
 #include "ExecPolicy.h"
 
 ProcType handle_parameters(int argc, char* argv[]) {
-	std::string usage = "./sharded b | d <c|p> <load> <min|max|q|gmin> | s <c|p> <load> <queries_per_block>";
+	std::string usage = "./sharded b | d <c|p> <load> <min|max|q|gmin> <seed> | s <c|p> <load> <queries_per_block> <seed>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -27,7 +27,7 @@ ProcType handle_parameters(int argc, char* argv[]) {
 	}
 
 	if (ptype == ProcType::Dynamic) {
-		if (argc != 5) {
+		if (argc != 6) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
@@ -52,9 +52,13 @@ ProcType handle_parameters(int argc, char* argv[]) {
 			cfg.exec_policy = new QueueExecPolicy;
 		} else if (! std::strcmp(argv[4], "gmin")) {
 			cfg.exec_policy = new MinGreedyExecPolicy;
+		}  else if (! std::strcmp(argv[4], "qmax")) {
+			cfg.exec_policy = new QueueMaxExecPolicy;
 		} 
+		
+		srand(std::atoi(argv[5]));
 	} else if (ptype == ProcType::Static) {
-		if (argc != 5) {
+		if (argc != 6) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
@@ -76,6 +80,8 @@ ProcType handle_parameters(int argc, char* argv[]) {
 		cfg.processing_size = nq / cfg.block_size;
 		
 		cfg.exec_policy = new StaticExecPolicy(cfg.processing_size);
+		
+		srand(std::atoi(argv[5]));
 	} else if (ptype == ProcType::Bench) {
 		cfg.exec_policy = new BenchExecPolicy;
 		assert(BENCH_SIZE <= cfg.eval_length);
@@ -85,9 +91,6 @@ ProcType handle_parameters(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
-	srand(42);
-//	srand(time(NULL));
-
 	MPI_Init(&argc, &argv);
 
 	int world_rank;

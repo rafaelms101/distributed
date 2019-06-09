@@ -181,7 +181,7 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 		aggregate_total += total;
 	}
 
-	std::printf("mean rt: %lf\n", aggregate_total / cfg.eval_length);
+	std::printf("%lf\n", aggregate_total / cfg.eval_length);
 }
 
 static void single_block_size_generator(int nshards, double* query_start_time, Config& cfg) {

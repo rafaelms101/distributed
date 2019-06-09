@@ -66,6 +66,16 @@ public:
 	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);	
 };
 
+class QueueMaxExecPolicy : public DynamicExecPolicy {
+private:
+	int processed = 0;
+	
+public:
+	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);	
+};
+
+
+
 class MinGreedyExecPolicy : public DynamicExecPolicy {
 public:
 	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);	
