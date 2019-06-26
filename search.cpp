@@ -5,6 +5,7 @@
 #include <future>
 #include <fstream>
 #include <unistd.h>
+#include <list>
  
 #include "faiss/index_io.h"
 #include "faiss/IndexFlat.h"
@@ -18,6 +19,8 @@
 #include "Buffer.h"
 #include "readSplittedIndex.h"
 #include "ExecPolicy.h"
+#include "QueryQueue.h"
+#include "QueueManager.h"
 
 static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* label_buffer, bool& finished_receiving, Config& cfg) {
 	deb("Receiver");
@@ -75,7 +78,7 @@ static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* 
 	deb("Finished receiving queries");	
 }
 
-static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
+static faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cfg) {
 	deb("Started loading");
 	
 	char index_path[500];
@@ -84,12 +87,12 @@ static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
 	deb("Loading file: %s", index_path);
 
 	FILE* index_file = fopen(index_path, "r");
-	auto cpu_index = read_index(index_file, shard, nshards);
+	auto cpu_index = static_cast<faiss::IndexIVFPQ*>(read_index(index_file, start_percent, end_percent));
 
 	deb("Ended loading");
 
 	//TODO: Maybe we shouldnt set nprobe here
-	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = cfg.nprobe;
+	cpu_index->nprobe = cfg.nprobe;
 	return cpu_index;
 }
 
@@ -123,31 +126,31 @@ static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
 	file.close();
 }
 
-static void process_buffer(ProcType ptype, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesGpu, Config& cfg) {
-	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
-	
-	//now we proccess our query buffer
-	if (ptype == ProcType::Bench) {
-		static bool finished = false;
-		
-		if (! finished) {
-			auto before = now();
-			gpu_index->search(nq, query_buffer, cfg.k, D, I);
-			auto time_spent = now() - before;
-
-			procTimesGpu.push_back(time_spent);
-			finished = time_spent >= 1;
+static void cpu_process(QueueManager* shared_context) {
+	while (shared_context->sent_queries() < cfg.test_length) {
+		for (QueryQueue* qq : shared_context->queues()) {
+			if (qq->on_gpu && (! shared_context->gpu_loading() || shared_context->cpu_load() != 0)) continue;
+			shared_context->process(qq);
 		}
-	} else gpu_index->search(nq, query_buffer, cfg.k, D, I);
-
-	buffer.consume(nq / cfg.block_size);
+	}
 }
 
-void search(int shard, int nshards, ProcType ptype, Config& cfg) {
-	std::vector<double> procTimesGpu;
-	
-	cfg.exec_policy->setup();
+static void gpu_process(QueueManager* shared_context) {
+	while (shared_context->sent_queries() < cfg.test_length) {
+		if (shared_context->gpu_queue->size() == 0) {
+			QueryQueue* qq = shared_context->biggestQueue();
+			
+			if (qq->size() > 1000) { //arbitrary threshold
+				//now we change our base
+				shared_context->replaceGPUIndex(qq);
+			}
+		}
+		
+		shared_context->process(shared_context->gpu_queue);
+	}
+}
 
+void search(int shard, int nshards, Config& cfg) {
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	Buffer query_buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
 	
@@ -158,47 +161,32 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	
 	faiss::gpu::StandardGpuResources res;
 	res.setTempMemory(1500 * 1024 * 1024);
-
-	auto cpu_index = load_index(shard, nshards, cfg);
-	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
 	
-	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
-	float* D = new float[cfg.eval_length * cfg.k];
+	QueueManager qm(&query_buffer, &label_buffer, &distance_buffer);
 	
-	deb("Search node is ready");
+	//TODO: a potencial problem is that we might be reading the entire database first, and then cutting it. This might be a problem in huge databases.
+	//TODO: we are assuming that we are dividing the database in two parts
+	float start_percent= float(shard) / nshards;
+	float end_percent = float(shard + 1) / nshards;
+	float mid_percent = (start_percent + end_percent) / 2;
 	
-	assert(cfg.test_length % cfg.block_size == 0);
-
-	int qn = 0;
+	auto cpu_index1 = load_index(start_percent, mid_percent, cfg);
+	auto cpu_index2 = load_index(mid_percent, end_percent, cfg);
+	
+	QueryQueue* qq1 = new QueryQueue(cpu_index1, &query_buffer);
+	QueryQueue* qq2 = new QueryQueue(cpu_index2, &query_buffer);
+	qm.addQueryQueue(qq1);
+	qm.addQueryQueue(qq2);
+	qm.setStartingGPUQueue(qq2, res);
+	
+	deb("Before launching threads");
+	
 	bool finished = false;
-	
 	std::thread receiver { comm_handler, &query_buffer, &distance_buffer, &label_buffer, std::ref(finished), std::ref(cfg) };
-	
-	while (! finished || query_buffer.entries() >= 1) {
-		int remaining_blocks = (cfg.test_length - qn) / cfg.block_size;
-		int num_blocks = cfg.exec_policy->numBlocksRequired(ptype, query_buffer, cfg);
-		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, remaining_blocks);
-		query_buffer.waitForData(num_blocks);
-
-		int nqueries = num_blocks * cfg.block_size;
-		
-		deb("Processing %d queries", nqueries);
-		process_buffer(ptype, gpu_index, nqueries, query_buffer, I, D, procTimesGpu, cfg); 
-		
-		label_buffer.transfer(I, num_blocks);
-		distance_buffer.transfer(D, num_blocks);
-
-		qn += nqueries;
-	}
+	std::thread gpu_thread { gpu_process, &qm };
+	std::thread cpu_thread { cpu_process,&qm };
 	
 	receiver.join();
-
-	delete[] I;
-	delete[] D;
-	
-	if (ptype == ProcType::Bench) {
-		store_profile_data(procTimesGpu, cfg);
-	}
-
-	deb("Finished search node");
+	cpu_thread.join();
+	gpu_thread.join();
 }

@@ -4,6 +4,6 @@
 #include "utils.h"
 #include "config.h"
 
-void generator(int nshards, ProcType ptype, Config& cfg);
+void generator(int nshards, Config& cfg);
 
 #endif

@@ -85,8 +85,6 @@ static double poisson_constant_interval(double mean_interval) {
 		current_interval = - std::log(r) * mean_interval;
 		assert(current_interval != 0);
 		nq = 1;
-		
-		std::printf("%.8lf\n", current_interval);
 	}
 	
 	nq++;
@@ -244,37 +242,21 @@ static double* query_start_time(double (*next_interval)(double), double param, C
 }
 
 //TODO: make generator a class
-void generator(int nshards, ProcType ptype, Config& cfg) {
-	double best_time_per_query = std::numeric_limits<double>::max();
-			
-	if (ptype != ProcType::Bench) {
-		std::vector<double> times(load_prof_times(cfg));
-		best_time_per_query = times[1];
-		for (int i = 2; i < times.size(); i++) {
-			double time_per_query = times[i] / (i * cfg.block_size);
-			if (time_per_query < best_time_per_query) best_time_per_query = time_per_query;
-		}
-		
-		std::printf("mean interval: %.8lf\n", best_time_per_query / cfg.load_factor);
-		deb("min_interval = %lf", best_time_per_query);
-	}
-	
+void generator(int nshards, Config& cfg) {
 	double* query_start;
 	
-	if (ptype != ProcType::Bench) {
-		deb("mean interval is %lf", best_time_per_query / cfg.load_factor);
-		
-		switch (cfg.request_distribution) {
-			case RequestDistribution::Constant: {
-				query_start = query_start_time(constant_interval, best_time_per_query / cfg.load_factor, cfg);
-				break;
-			}
-			case RequestDistribution::Variable_Poisson: {
-				query_start = query_start_time(poisson_constant_interval, best_time_per_query / cfg.load_factor, cfg);
-				break;
-			}
+
+	switch (cfg.request_distribution) {
+		case RequestDistribution::Constant: {
+			query_start = query_start_time(constant_interval, cfg.query_interval, cfg);
+			break;
+		}
+		case RequestDistribution::Variable_Poisson: {
+			query_start = query_start_time(poisson_constant_interval, cfg.query_interval, cfg);
+			break;
 		}
 	}
+	
 	
 	int shards_ready = 0;
 	
@@ -285,6 +267,5 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 		shards_ready++;
 	}
 
-	if (ptype == ProcType::Bench) bench_generator(BENCH_SIZE, nshards, cfg);
-	else single_block_size_generator(nshards, query_start, cfg);
+	single_block_size_generator(nshards, query_start, cfg);
 }

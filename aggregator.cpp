@@ -120,7 +120,7 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 	delete [] gt;
 }
 
-void aggregator(int nshards, ProcType ptype, Config& cfg) {
+void aggregator(int nshards, Config& cfg) {
 	std::deque<double> end_times;
 
 	faiss::Index::idx_t* answers = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
@@ -181,10 +181,8 @@ void aggregator(int nshards, ProcType ptype, Config& cfg) {
 		}
 	}
 	
-	if (ptype != ProcType::Bench) {
-		show_recall(answers, cfg); 
-		send_times(end_times, cfg.eval_length);
-	}
+	show_recall(answers, cfg);
+	send_times(end_times, cfg.eval_length);
 	
 	deb("Finished aggregator");
 }

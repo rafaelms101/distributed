@@ -6,7 +6,7 @@
 #include <mutex>   
 #include <condition_variable>
 
-
+//TODO: make this class a template, instead of always returning unsigned char*
 class Buffer {
 public:
 	Buffer(const long block_size, const long num_entries);
@@ -16,6 +16,7 @@ public:
 	void add(const long qty = 1);
 	unsigned char* peekFront();
 	unsigned char* peekEnd();
+	unsigned char* peek(long n);
 	void consume(const long n);
 	void waitForData(int n);
 	void waitForSpace(int n);

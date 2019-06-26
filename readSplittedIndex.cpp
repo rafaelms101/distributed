@@ -145,7 +145,7 @@ static void read_ArrayInvertedLists_sizes (
 }
 
 
-faiss::InvertedLists *read_InvertedLists (IOReader *f, int io_flags, int shard, int total_shards, faiss::Index::idx_t* ntotal) {
+faiss::InvertedLists *read_InvertedLists (IOReader *f, int io_flags, float start_percent, float end_percent, faiss::Index::idx_t* ntotal) {
 	*ntotal = 0;
 	
 	uint32_t h;
@@ -167,13 +167,16 @@ faiss::InvertedLists *read_InvertedLists (IOReader *f, int io_flags, int shard, 
 			
 			size_t n = ails->ids[i].size();
 			
+			size_t start_id = std::ceil(n * start_percent);
+			size_t end_id = std::ceil(n * end_percent) - 1;
+			
 			if (n > 0) {
 				READANDCHECK(ails->codes[i].data(), n * ails->code_size);
 				READANDCHECK(ails->ids[i].data(), n);
 				
 				// here we throw away the entries that are not IN this shard
 				int c = 0;
-				for (int j = shard; j < n; j += total_shards, c++) {
+				for (int j = start_id; j <= end_id; j++, c++) {
 					ails->ids[i][c] = ails->ids[i][j];
 					
 					for (int d = 0; d < ails->code_size; d++) {
@@ -234,15 +237,15 @@ faiss::InvertedLists *read_InvertedLists (IOReader *f, int io_flags, int shard, 
 //	}
 }
 
-static void read_InvertedLists (faiss::IndexIVF *ivf, IOReader *f, int io_flags, int shard, int total_shards) {
-	faiss::InvertedLists *ils = read_InvertedLists (f, io_flags, shard, total_shards, &ivf->ntotal);
+static void read_InvertedLists (faiss::IndexIVF *ivf, IOReader *f, int io_flags, float start_percent, float end_percent) {
+	faiss::InvertedLists *ils = read_InvertedLists (f, io_flags, start_percent, end_percent, &ivf->ntotal);
     FAISS_THROW_IF_NOT (!ils || (ils->nlist == ivf->nlist &&
                                  ils->code_size == ivf->code_size));
     ivf->invlists = ils;
     ivf->own_invlists = true;
 }
 
-static faiss::IndexIVFPQ *read_ivfpq (IOReader *f, int shard, int total_shards, int io_flags)
+static faiss::IndexIVFPQ *read_ivfpq (IOReader *f, float start_percent, float end_percent, int io_flags)
 {
 	faiss::IndexIVFPQ * ivpq = new faiss::IndexIVFPQ();
 
@@ -251,7 +254,7 @@ static faiss::IndexIVFPQ *read_ivfpq (IOReader *f, int shard, int total_shards, 
     READ1(ivpq->by_residual);
     READ1(ivpq->code_size);
     read_ProductQuantizer(&ivpq->pq, f);
-    read_InvertedLists(ivpq, f, io_flags, shard, total_shards);
+    read_InvertedLists(ivpq, f, io_flags, start_percent, end_percent);
    
     // precomputed table not stored. It is cheaper to recompute it
     ivpq->use_precomputed_table = 0;
@@ -260,15 +263,15 @@ static faiss::IndexIVFPQ *read_ivfpq (IOReader *f, int shard, int total_shards, 
     return ivpq;
 }
 
-faiss::Index *read_index (IOReader *f, int shard, int total_shards, int io_flags) {
+faiss::Index *read_index (IOReader *f, float start_percent, float end_percent, int io_flags) {
 	faiss::Index * idx = nullptr;
 	uint32_t h;
 	READ1(h);
-	idx = read_ivfpq(f, shard, total_shards, io_flags);
+	idx = read_ivfpq(f, start_percent, end_percent, io_flags);
 	return idx;
 }
 
-faiss::Index *read_index (FILE * f, int shard, int total_shards, int io_flags) {
+faiss::Index *read_index (FILE * f, float start_percent, float end_percent, int io_flags) {
 	FileIOReader reader(f);
-	return read_index(&reader, shard, total_shards, io_flags);
+	return read_index(&reader, start_percent, end_percent, io_flags); 
 }

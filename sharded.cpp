@@ -9,85 +9,26 @@
 #include "config.h"
 #include "ExecPolicy.h"
 
-ProcType handle_parameters(int argc, char* argv[]) {
-	std::string usage = "./sharded b | d <c|p> <load> <min|max|q|gmin> <seed> | s <c|p> <load> <queries_per_block> <seed>";
+void handle_parameters(int argc, char* argv[]) {
+	std::string usage = "./sharded <c|p> <query_interval> <alg> <seed>";
 
-	if (argc < 2) {
+	if (argc != 5) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
 		std::exit(-1);
 	}
 
-	ProcType ptype = ProcType::Bench;
-	if (! strcmp("d", argv[1])) ptype = ProcType::Dynamic;
-	else if (! strcmp("b", argv[1])) ptype = ProcType::Bench;
-	else if (! strcmp("s", argv[1])) ptype = ProcType::Static;
-	else {
-		std::printf("Invalid processing type.Expected b | s | d\n");
-		std::exit(-1);
+	if (! std::strcmp(argv[1], "c")) {
+		cfg.request_distribution = RequestDistribution::Constant;
+	} else if (! std::strcmp(argv[2], "p")) {
+		cfg.request_distribution = RequestDistribution::Variable_Poisson;
+	} else {
+		std::printf("Wrong arguments.\n%s\n", usage.c_str());
+		std::exit(- 1);
 	}
 
-	if (ptype == ProcType::Dynamic) {
-		if (argc != 6) {
-			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			std::exit(-1);
-		}
+	cfg.query_interval = std::atof(argv[2]);
 
-		if (! std::strcmp(argv[2], "c")) {
-			cfg.request_distribution = RequestDistribution::Constant;
-		} else if (! std::strcmp(argv[2], "p")) {
-			cfg.request_distribution = RequestDistribution::Variable_Poisson;
-		} else {
-			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			std::exit(-1);
-		}
-		
-		cfg.load_factor = std::atof(argv[3]);
-		
-		
-		if (! std::strcmp(argv[4], "min")) {
-			cfg.exec_policy = new MinExecPolicy;
-		} else if (! std::strcmp(argv[4], "max")) {
-			cfg.exec_policy = new MaxExecPolicy;
-		} else if (! std::strcmp(argv[4], "q")) {
-			cfg.exec_policy = new QueueExecPolicy;
-		} else if (! std::strcmp(argv[4], "gmin")) {
-			cfg.exec_policy = new MinGreedyExecPolicy;
-		}  else if (! std::strcmp(argv[4], "qmax")) {
-			cfg.exec_policy = new QueueMaxExecPolicy;
-		} 
-		
-		srand(std::atoi(argv[5]));
-	} else if (ptype == ProcType::Static) {
-		if (argc != 6) {
-			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			std::exit(-1);
-		}
-
-		if (! std::strcmp(argv[2], "c")) {
-			cfg.request_distribution = RequestDistribution::Constant;
-		} else if (! std::strcmp(argv[2], "p")) {
-			cfg.request_distribution = RequestDistribution::Variable_Poisson;
-		} else {
-			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			std::exit(- 1);
-		}
-
-		cfg.load_factor = std::atof(argv[3]);
-		
-		int nq = atoi(argv[4]); 
-		assert(nq <= cfg.eval_length);
-		assert(nq % cfg.block_size == 0);
-		cfg.processing_size = nq / cfg.block_size;
-		
-		cfg.exec_policy = new StaticExecPolicy(cfg.processing_size);
-		
-		srand(std::atoi(argv[5]));
-	} else if (ptype == ProcType::Bench) {
-		cfg.exec_policy = new BenchExecPolicy;
-		assert(BENCH_SIZE <= cfg.eval_length);
-	}
-
-	return ptype;
+	srand(std::atoi(argv[4]));
 }
 
 int main(int argc, char* argv[]) {
@@ -96,7 +37,7 @@ int main(int argc, char* argv[]) {
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	
-	ProcType ptype = handle_parameters(argc, argv);
+	handle_parameters(argc, argv);
 
     // Get the number of processes
     int world_size;
@@ -114,11 +55,11 @@ int main(int argc, char* argv[]) {
     
 
     if (world_rank == 1) {
-    	generator(world_size - 2, ptype, cfg);
+    	generator(world_size - 2, cfg);
     } else if (world_rank == 0) {
-    	aggregator(world_size - 2, ptype, cfg);
+    	aggregator(world_size - 2, cfg);
     } else {
-    	search(world_rank - 2, world_size - 2, ptype, cfg);
+    	search(world_rank - 2, world_size - 2, cfg);
     }
     
     // Finalize the MPI environment.

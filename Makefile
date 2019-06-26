@@ -8,15 +8,15 @@ FAISS_HOME = ../faiss
 
 -include $(FAISS_HOME)/makefile.inc
 
-OPT = -O3
+OPT = -O3 -g
 
 FAISS_INCLUDE = -I $(FAISS_HOME)/.. -I $(FAISS_HOME)
 FAISS_LIB = $(FAISS_HOME)/libfaiss.a
 
 %.o: %.cpp *.h
-	$(CXX) -g $(OPT) $(CPPFLAGS) -o $@ -c $< $(FAISS_INCLUDE)
+	$(CXX) -std=c++11 $(OPT) $(CPPFLAGS) -o $@ -c $< $(FAISS_INCLUDE)
 
-sharded: config.o utils.o readSplittedIndex.o generator.o search.o aggregator.o ExecPolicy.o Buffer.o sharded.o $(FAISS_LIB)
+sharded: config.o utils.o readSplittedIndex.o generator.o search.o aggregator.o ExecPolicy.o Buffer.o QueryQueue.o QueueManager.o sharded.o $(FAISS_LIB)
 	mpic++ -std=c++11 $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 train: train.o $(FAISS_LIB)
