@@ -128,7 +128,7 @@ static void cpu_process(QueueManager* qm) {
 	while (qm->sent_queries() < cfg.test_length) {
 		for (QueryQueue* qq : qm->queues()) {
 			if (qq->on_gpu && (! qm->gpu_loading() || qm->cpu_load() != 0)) continue;
-			qm->process(qq);
+			qm->processCPU(qq);
 		}
 	}
 }
@@ -144,7 +144,7 @@ static void gpu_process(QueueManager* qm) {
 			}
 		}
 		
-		if (qm->gpu_queue->size() >= 100)qm->process(qm->gpu_queue);
+		qm->processGPU();
 	}
 }
 

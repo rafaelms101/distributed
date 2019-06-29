@@ -29,7 +29,7 @@ public:
 	Buffer* distance_buffer();
 	long size();
 	faiss::IndexIVFPQ* cpu_index();
-	void search();
+	void search(int nqueries);
 	long results_size();
 	void clear_result_buffer(int nqueries);
 	char* id();

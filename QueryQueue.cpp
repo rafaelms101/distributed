@@ -33,12 +33,11 @@ faiss::IndexIVFPQ* QueryQueue::cpu_index() {
 	return _cpu_index;
 }
 
-void QueryQueue::search() {
+void QueryQueue::search(int nqueries) {
 	faiss::Index* index = on_gpu ? dynamic_cast<faiss::Index*>(qm->gpuIndex()) : dynamic_cast<faiss::Index*>(_cpu_index);
 	faiss::Index::idx_t* labels = (faiss::Index::idx_t*) _label_buffer->peekEnd();
 	float* distances = (float*) _distance_buffer->peekEnd();
 	float* query_start = qm->ptrToQueryBuffer(start_query_id);
-	long nqueries = size();
 
 	processed += nqueries;
 

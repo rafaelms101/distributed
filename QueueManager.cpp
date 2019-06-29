@@ -141,13 +141,16 @@ QueryQueue* QueueManager::biggestQueue() {
 	return biggest;
 }
 
-void QueueManager::process(QueryQueue* qq) {
-	if (qq->size() != 0) qq->search();
-	
-	if (qq->on_gpu) {
-		shrinkQueryBuffer();
-		mergeResults();
-	}
+void QueueManager::processGPU() {
+	long remaining = cfg.test_length - _sent_queries;
+	long threshold = std::min(std::min(100l, gpu_queue->size()), remaining);
+	if (gpu_queue->size() >= threshold) gpu_queue->search(threshold);
+	shrinkQueryBuffer();
+	mergeResults();
+}
+
+void QueueManager::processCPU(QueryQueue* qq) {
+	if (qq->size() >= 1) qq->search(qq->size());
 }
 
 void QueueManager::setStartingGPUQueue(QueryQueue* qq, faiss::gpu::StandardGpuResources& res) {

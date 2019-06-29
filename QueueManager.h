@@ -40,7 +40,8 @@ public:
 	bool gpu_loading();
 	long cpu_load();
 	QueryQueue* biggestQueue();
-	void process(QueryQueue* qq);
+	void processCPU(QueryQueue* qq);
+	void processGPU();
 	void setStartingGPUQueue(QueryQueue* qq, faiss::gpu::StandardGpuResources& res);
 	float* ptrToQueryBuffer(long query_id);
 	long numberOfQueries(long starting_query_id);
