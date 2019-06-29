@@ -23,8 +23,6 @@
 #include "QueueManager.h"
 
 static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* label_buffer, bool& finished_receiving, Config& cfg) {
-	deb("Receiver");
-	
 	long queries_received = 0;
 	long queries_sent = 0;
 	
@@ -126,27 +124,27 @@ static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
 	file.close();
 }
 
-static void cpu_process(QueueManager* shared_context) {
-	while (shared_context->sent_queries() < cfg.test_length) {
-		for (QueryQueue* qq : shared_context->queues()) {
-			if (qq->on_gpu && (! shared_context->gpu_loading() || shared_context->cpu_load() != 0)) continue;
-			shared_context->process(qq);
+static void cpu_process(QueueManager* qm) {
+	while (qm->sent_queries() < cfg.test_length) {
+		for (QueryQueue* qq : qm->queues()) {
+			if (qq->on_gpu && (! qm->gpu_loading() || qm->cpu_load() != 0)) continue;
+			qm->process(qq);
 		}
 	}
 }
 
-static void gpu_process(QueueManager* shared_context) {
-	while (shared_context->sent_queries() < cfg.test_length) {
-		if (shared_context->gpu_queue->size() == 0) {
-			QueryQueue* qq = shared_context->biggestQueue();
+static void gpu_process(QueueManager* qm) {
+	while (qm->sent_queries() < cfg.test_length) {
+		if (qm->gpu_queue->size() == 0) {
+			QueryQueue* qq = qm->biggestQueue();
 			
 			if (qq->size() > 1000) { //arbitrary threshold
 				//now we change our base
-				shared_context->replaceGPUIndex(qq);
+				qm->replaceGPUIndex(qq);
 			}
 		}
 		
-		shared_context->process(shared_context->gpu_queue);
+		if (qm->gpu_queue->size() >= 100)qm->process(qm->gpu_queue);
 	}
 }
 
@@ -173,13 +171,9 @@ void search(int shard, int nshards, Config& cfg) {
 	auto cpu_index1 = load_index(start_percent, mid_percent, cfg);
 	auto cpu_index2 = load_index(mid_percent, end_percent, cfg);
 	
-	QueryQueue* qq1 = new QueryQueue(cpu_index1, &query_buffer);
-	QueryQueue* qq2 = new QueryQueue(cpu_index2, &query_buffer);
-	qm.addQueryQueue(qq1);
-	qm.addQueryQueue(qq2);
+	QueryQueue* qq1 = new QueryQueue("queue@1", cpu_index1, &qm);
+	QueryQueue* qq2 = new QueryQueue("queue@2", cpu_index2, &qm);
 	qm.setStartingGPUQueue(qq2, res);
-	
-	deb("Before launching threads");
 	
 	bool finished = false;
 	std::thread receiver { comm_handler, &query_buffer, &distance_buffer, &label_buffer, std::ref(finished), std::ref(cfg) };

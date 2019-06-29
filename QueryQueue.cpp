@@ -1,10 +1,12 @@
 #include "QueryQueue.h"
 
-long QueryQueue::buffer_start_query_id = 0;
+#include "utils.h"
 
-QueryQueue::QueryQueue(faiss::IndexIVFPQ* index, Buffer* _query_buffer) : start_query_id(0), on_gpu(false), _cpu_index(index), gpu_index(nullptr), query_buffer(_query_buffer) {
+QueryQueue::QueryQueue(char* id, faiss::IndexIVFPQ* index, QueueManager* _qm) :
+		start_query_id(0), on_gpu(false), _cpu_index(index), _id(id), qm(_qm) {
 	_label_buffer = new Buffer(sizeof(faiss::Index::idx_t) * cfg.k, 1000000);
 	_distance_buffer = new Buffer(sizeof(float) * cfg.k, 1000000);
+	qm->addQueryQueue(this);
 }
 
 Buffer* QueryQueue::label_buffer() {
@@ -16,8 +18,15 @@ Buffer* QueryQueue::distance_buffer() {
 }
 
 long QueryQueue::size() {
-	long qty = query_buffer->entries() * cfg.block_size;
-	return qty - (start_query_id - buffer_start_query_id);
+	auto nq = qm->numberOfQueries(start_query_id);
+	
+	if (nq < 0 || nq > 1000) {
+		deb("%s/%s: %d queries", on_gpu ? "gpu" : "cpu", _id, nq);
+		
+		if (nq < 0) exit(-1);
+	}
+	
+	return nq;
 }
 
 faiss::IndexIVFPQ* QueryQueue::cpu_index() {
@@ -25,16 +34,18 @@ faiss::IndexIVFPQ* QueryQueue::cpu_index() {
 }
 
 void QueryQueue::search() {
-	faiss::Index* index = on_gpu ? dynamic_cast<faiss::Index*>(gpu_index) : dynamic_cast<faiss::Index*>(_cpu_index);
+	faiss::Index* index = on_gpu ? dynamic_cast<faiss::Index*>(qm->gpuIndex()) : dynamic_cast<faiss::Index*>(_cpu_index);
 	faiss::Index::idx_t* labels = (faiss::Index::idx_t*) _label_buffer->peekEnd();
 	float* distances = (float*) _distance_buffer->peekEnd();
-	float* query_start = (float*) query_buffer->peekFront();
+	float* query_start = qm->ptrToQueryBuffer(start_query_id);
 	long nqueries = size();
+
+	processed += nqueries;
 
 	_label_buffer->waitForSpace(nqueries);
 	_distance_buffer->waitForSpace(nqueries);
 
-	index->search(nqueries, query_start + (start_query_id - buffer_start_query_id) * cfg.d, cfg.k, distances, labels);
+	index->search(nqueries, query_start, cfg.k, distances, labels);
 
 	_label_buffer->add(nqueries);
 	_distance_buffer->add(nqueries);
@@ -49,4 +60,8 @@ long QueryQueue::results_size() {
 void QueryQueue::clear_result_buffer(int nqueries) {
 	_distance_buffer->consume(nqueries);
 	_label_buffer->consume(nqueries);
+}
+
+char* QueryQueue::id() {
+	return _id;
 }

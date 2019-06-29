@@ -9,8 +9,13 @@
 #include "Buffer.h"
 #include "QueryQueue.h"
 
+class QueryQueue;
+
 class QueueManager {
 	Buffer* query_buffer;
+	long buffer_start_query_id = 0;
+	std::mutex mutex_buffer_start;
+	
 	Buffer* label_buffer;
 	Buffer* distance_buffer;
 	
@@ -18,6 +23,8 @@ class QueueManager {
 	long _sent_queries = 0;
 	bool _gpu_loading = false;
 	std::list<QueryQueue*> _queues;
+	
+	faiss::gpu::GpuIndexIVFPQ* gpu_index;
 	
 	void shrinkQueryBuffer();
 	void mergeResults();
@@ -35,6 +42,9 @@ public:
 	QueryQueue* biggestQueue();
 	void process(QueryQueue* qq);
 	void setStartingGPUQueue(QueryQueue* qq, faiss::gpu::StandardGpuResources& res);
+	float* ptrToQueryBuffer(long query_id);
+	long numberOfQueries(long starting_query_id);
+	faiss::gpu::GpuIndexIVFPQ* gpuIndex();
 };
 
 #endif /* QUEUEMANAGER_H_ */

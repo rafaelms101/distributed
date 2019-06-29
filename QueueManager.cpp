@@ -1,5 +1,7 @@
 #include "QueueManager.h"
 
+#include "utils.h"
+
 void QueueManager::shrinkQueryBuffer() {
 	long min_query_id = std::numeric_limits<long>::max();
 
@@ -8,11 +10,15 @@ void QueueManager::shrinkQueryBuffer() {
 			min_query_id = qq->start_query_id;
 		}
 	}
-
-	if (min_query_id > QueryQueue::buffer_start_query_id) {
-		query_buffer->consume((min_query_id - QueryQueue::buffer_start_query_id) / cfg.block_size);
-		QueryQueue::buffer_start_query_id = min_query_id;
-	}
+	
+	if (min_query_id == buffer_start_query_id) return;
+	
+	assert(min_query_id > buffer_start_query_id);
+	
+	std::unique_lock<std::mutex> { mutex_buffer_start };
+	
+	query_buffer->consume((min_query_id - buffer_start_query_id) / cfg.block_size);
+	buffer_start_query_id = min_query_id;
 }
 
 void QueueManager::mergeResults() {
@@ -25,24 +31,27 @@ void QueueManager::mergeResults() {
 	}
 
 	if (num_queries == 0) return;
+	
 
 	float* all_distances[_queues.size()];
 	faiss::Index::idx_t* all_labels[_queues.size()];
-	std::vector<long> idxs(_queues.size());
 
 	int i = 0;
 	for (QueryQueue* qq : _queues) {
-		all_distances[i] = reinterpret_cast<float*>(qq->distance_buffer()->peekEnd());
-		all_labels[i] = reinterpret_cast<faiss::Index::idx_t*>(qq->label_buffer()->peekEnd());
+		//TODO: potentially needs a lock
+		all_distances[i] = reinterpret_cast<float*>(qq->distance_buffer()->peekFront());
+		all_labels[i] = reinterpret_cast<faiss::Index::idx_t*>(qq->label_buffer()->peekFront());
 		i++;
 	}
+	
+	std::vector<long> idxs(_queues.size());
 
 	distance_buffer->waitForSpace(num_queries);
 	label_buffer->waitForSpace(num_queries);
 
 	float* distance_array = reinterpret_cast<float*>(distance_buffer->peekEnd());
 	faiss::Index::idx_t* label_array = reinterpret_cast<faiss::Index::idx_t*>(label_buffer->peekEnd());
-
+	
 	for (int q = 0; q < num_queries; q++) {
 		for (int i = 0; i < _queues.size(); i++) {
 			idxs[i] = q * cfg.k;
@@ -57,15 +66,18 @@ void QueueManager::mergeResults() {
 				}
 			}
 
-			* distance_array++ = all_distances[from][idxs[from]];
-			* label_array++ = all_labels[from][idxs[from]];
+			*distance_array = all_distances[from][idxs[from]];
+			*label_array = all_labels[from][idxs[from]];
+			
+			distance_array++;
+			label_array++;
 			idxs[from]++;
 		}
 	}
-
-	distance_buffer->add(num_queries);
-	label_buffer->add(num_queries);
-
+	
+	distance_buffer->add(num_queries / cfg.block_size);
+	label_buffer->add(num_queries / cfg.block_size);
+	
 	for (QueryQueue* qq : _queues) {
 		qq->clear_result_buffer(num_queries);
 	}
@@ -83,13 +95,14 @@ void QueueManager::addQueryQueue(QueryQueue* qq) {
 }
 
 void QueueManager::replaceGPUIndex(QueryQueue* qq) {
+	deb("gpu: changing from queue %s to queue %s",gpu_queue->id(), qq->id());
 	_gpu_loading = true;
-	qq->on_gpu = true;
 	gpu_queue->on_gpu = false;
-	gpu_queue->gpu_index->copyFrom(qq->cpu_index());
-	qq->gpu_index = gpu_queue->gpu_index;
+	qq->on_gpu = true;
 	gpu_queue = qq;
+	gpu_index->copyFrom(qq->cpu_index());
 	_gpu_loading = false;
+	deb("finished changing");
 }
 
 int QueueManager::sent_queries() {
@@ -129,17 +142,30 @@ QueryQueue* QueueManager::biggestQueue() {
 }
 
 void QueueManager::process(QueryQueue* qq) {
-	//TODO: deal when we dont have queries to process
-	if (qq->size() == 0) return;
-
-	qq->search();
-	shrinkQueryBuffer();
-	mergeResults();
+	if (qq->size() != 0) qq->search();
+	
+	if (qq->on_gpu) {
+		shrinkQueryBuffer();
+		mergeResults();
+	}
 }
 
 void QueueManager::setStartingGPUQueue(QueryQueue* qq, faiss::gpu::StandardGpuResources& res) {
-	auto index = faiss::gpu::index_cpu_to_gpu(& res, 0, qq->cpu_index(), nullptr);
-	qq->gpu_index = reinterpret_cast<faiss::gpu::GpuIndexIVFPQ*>(index);
+	gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(& res, 0, qq->cpu_index(), nullptr));
 	qq->on_gpu = true;
 	gpu_queue = qq;
+}
+
+float* QueueManager::ptrToQueryBuffer(long query_id) {
+	std::unique_lock<std::mutex> { mutex_buffer_start };
+	return reinterpret_cast<float*>(query_buffer->peekFront()) + (query_id - buffer_start_query_id) * cfg.d;
+}
+
+long QueueManager::numberOfQueries(long starting_query_id) {
+	std::unique_lock<std::mutex> { mutex_buffer_start };
+	return query_buffer->entries() * cfg.block_size - (starting_query_id - buffer_start_query_id);
+}
+
+faiss::gpu::GpuIndexIVFPQ* QueueManager::gpuIndex() {
+	return gpu_index;
 }
