@@ -18,15 +18,7 @@ Buffer* QueryQueue::distance_buffer() {
 }
 
 long QueryQueue::size() {
-	auto nq = qm->numberOfQueries(start_query_id);
-	
-	if (nq < 0 || nq > 1000) {
-		deb("%s/%s: %d queries", on_gpu ? "gpu" : "cpu", _id, nq);
-		
-		if (nq < 0) exit(-1);
-	}
-	
-	return nq;
+	return qm->numberOfQueries(start_query_id);;
 }
 
 faiss::IndexIVFPQ* QueryQueue::cpu_index() {
