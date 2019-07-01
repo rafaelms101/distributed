@@ -16,23 +16,24 @@ class QueryQueue {
 	faiss::IndexIVFPQ* _cpu_index;
 	Buffer* _label_buffer;
 	Buffer* _distance_buffer;
-	char* _id;
 	
-	long processed = 0;
+	
 	
 public:
+	faiss::gpu::GpuIndexIVFPQ* gpu_index;
 	long start_query_id;
 	bool on_gpu;
 	
-	QueryQueue(char* id, faiss::IndexIVFPQ*, QueueManager*);
+	QueryQueue(faiss::IndexIVFPQ*, QueueManager*);
 	Buffer* label_buffer();
 	Buffer* distance_buffer();
 	long size();
 	faiss::IndexIVFPQ* cpu_index();
-	void search(int nqueries);
+	
 	long results_size();
 	void clear_result_buffer(int nqueries);
-	char* id();
+	void create_gpu_index(faiss::gpu::StandardGpuResources&);
+	long search(int nqueries);
 };
 
 #endif /* QUERYQUEUE_H_ */

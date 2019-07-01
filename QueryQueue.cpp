@@ -2,8 +2,8 @@
 
 #include "utils.h"
 
-QueryQueue::QueryQueue(char* id, faiss::IndexIVFPQ* index, QueueManager* _qm) :
-		start_query_id(0), on_gpu(false), _cpu_index(index), _id(id), qm(_qm) {
+QueryQueue::QueryQueue(faiss::IndexIVFPQ* index, QueueManager* _qm) :
+		start_query_id(0), on_gpu(false), _cpu_index(index), qm(_qm), gpu_index(nullptr) {
 	_label_buffer = new Buffer(sizeof(faiss::Index::idx_t) * cfg.k, 1000000);
 	_distance_buffer = new Buffer(sizeof(float) * cfg.k, 1000000);
 	qm->addQueryQueue(this);
@@ -25,13 +25,15 @@ faiss::IndexIVFPQ* QueryQueue::cpu_index() {
 	return _cpu_index;
 }
 
-void QueryQueue::search(int nqueries) {
-	faiss::Index* index = on_gpu ? dynamic_cast<faiss::Index*>(qm->gpuIndex()) : dynamic_cast<faiss::Index*>(_cpu_index);
+long QueryQueue::search(int nqueries) {
+	if (nqueries == 0 || nqueries > size()) return 0;
+
+	faiss::Index* index = on_gpu ? dynamic_cast<faiss::Index*>(gpu_index) : dynamic_cast<faiss::Index*>(_cpu_index);
 	faiss::Index::idx_t* labels = (faiss::Index::idx_t*) _label_buffer->peekEnd();
 	float* distances = (float*) _distance_buffer->peekEnd();
 	float* query_start = qm->ptrToQueryBuffer(start_query_id);
 
-	processed += nqueries;
+	start_query_id += nqueries;
 
 	_label_buffer->waitForSpace(nqueries);
 	_distance_buffer->waitForSpace(nqueries);
@@ -40,8 +42,8 @@ void QueryQueue::search(int nqueries) {
 
 	_label_buffer->add(nqueries);
 	_distance_buffer->add(nqueries);
-
-	start_query_id += nqueries;
+	
+	return nqueries;
 }
 
 long QueryQueue::results_size() {
@@ -53,6 +55,7 @@ void QueryQueue::clear_result_buffer(int nqueries) {
 	_label_buffer->consume(nqueries);
 }
 
-char* QueryQueue::id() {
-	return _id;
+void QueryQueue::create_gpu_index(faiss::gpu::StandardGpuResources& res) {
+	gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(& res, 0, _cpu_index, nullptr));
+	on_gpu = true;
 }

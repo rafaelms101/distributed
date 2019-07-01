@@ -94,17 +94,6 @@ void QueueManager::addQueryQueue(QueryQueue* qq) {
 	_queues.push_back(qq);
 }
 
-void QueueManager::replaceGPUIndex(QueryQueue* qq) {
-	deb("gpu: changing from queue %s to queue %s",gpu_queue->id(), qq->id());
-	_gpu_loading = true;
-	gpu_queue->on_gpu = false;
-	qq->on_gpu = true;
-	gpu_queue = qq;
-	gpu_index->copyFrom(qq->cpu_index());
-	_gpu_loading = false;
-	deb("finished changing");
-}
-
 int QueueManager::sent_queries() {
 	return _sent_queries;
 }
@@ -129,11 +118,11 @@ long QueueManager::cpu_load() {
 	return load;
 }
 
-QueryQueue* QueueManager::biggestQueue() {
+QueryQueue* QueueManager::biggestCPUQueue() {
 	QueryQueue* biggest = _queues.front();
 
 	for (QueryQueue* qq : _queues) {
-		if (qq->size() > biggest->size()) {
+		if (! qq->on_gpu && qq->size() > biggest->size()) {
 			biggest = qq;
 		}
 	}
@@ -141,22 +130,12 @@ QueryQueue* QueueManager::biggestQueue() {
 	return biggest;
 }
 
-void QueueManager::processGPU() {
-	long remaining = cfg.test_length - _sent_queries;
-	long threshold = std::min(std::min(100l, gpu_queue->size()), remaining);
-	if (gpu_queue->size() >= threshold) gpu_queue->search(threshold);
-	shrinkQueryBuffer();
-	mergeResults();
-}
-
-void QueueManager::processCPU(QueryQueue* qq) {
-	if (qq->size() >= 1) qq->search(qq->size());
-}
-
-void QueueManager::setStartingGPUQueue(QueryQueue* qq, faiss::gpu::StandardGpuResources& res) {
-	gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(& res, 0, qq->cpu_index(), nullptr));
-	qq->on_gpu = true;
-	gpu_queue = qq;
+QueryQueue* QueueManager::firstGPUQueue() {
+	for (QueryQueue* qq : _queues) {
+		if (qq->on_gpu) return qq;
+	}
+	
+	return nullptr;
 }
 
 float* QueueManager::ptrToQueryBuffer(long query_id) {
@@ -169,6 +148,16 @@ long QueueManager::numberOfQueries(long starting_query_id) {
 	return query_buffer->entries() * cfg.block_size - (starting_query_id - buffer_start_query_id);
 }
 
-faiss::gpu::GpuIndexIVFPQ* QueueManager::gpuIndex() {
-	return gpu_index;
+void QueueManager::switchToGPU(QueryQueue* to_gpu) {
+	QueryQueue* to_cpu = firstGPUQueue();
+	
+	to_cpu->on_gpu = false;
+	auto gpu_index = to_cpu->gpu_index;
+	to_cpu->gpu_index = nullptr;
+	
+	_gpu_loading = true;
+	gpu_index->copyFrom(to_gpu->cpu_index());
+	to_gpu->gpu_index = gpu_index;
+	to_gpu->on_gpu = true;
+	_gpu_loading = false;
 }
