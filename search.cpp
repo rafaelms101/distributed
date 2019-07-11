@@ -127,24 +127,33 @@ static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
 static void cpu_process(QueueManager* qm) {
 	while (qm->sent_queries() < cfg.test_length) {
 		for (QueryQueue* qq : qm->queues()) {
-			if (qq->on_gpu && (! qm->gpu_loading() || qm->cpu_load() != 0)) continue;
-			qm->processCPU(qq);
+			if (qq->on_gpu) continue;
+			long nq = qq->size();
+			qq->search(nq);
 		}
 	}
 }
 
 static void gpu_process(QueueManager* qm) {
 	while (qm->sent_queries() < cfg.test_length) {
-		if (qm->gpu_queue->size() == 0) {
-			QueryQueue* qq = qm->biggestQueue();
-			
-			if (qq->size() > 1000) { //arbitrary threshold
-				//now we change our base
-				qm->replaceGPUIndex(qq);
-			}
+		long processed = 0;
+		
+		for (QueryQueue* qq : qm->queues()) {
+			if (! qq->on_gpu) continue;
+			long nq = qq->size();
+			processed += qq->search(nq);
 		}
 		
-		qm->processGPU();
+		qm->shrinkQueryBuffer();
+		qm->mergeResults();
+		
+		if (processed == 0) {
+			QueryQueue* qq = qm->biggestCPUQueue();
+			
+			if (qq->size() > 1000) { //arbitrary threshold
+				qm->switchToGPU(qq);
+			}
+		}
 	}
 }
 
@@ -284,15 +293,19 @@ static void search_hybrid(Buffer& query_buffer, Buffer& distance_buffer, Buffer&
 	//TODO: we are assuming that we are dividing the database in two parts
 	float start_percent = float(shard) / nshards;
 	float end_percent = float(shard + 1) / nshards;
-	float length = end_percent - start_percent;
-	float gpu_part = 0.2;
+	
+	long pieces = 2;
+	float gpu_pieces = 1;
+	float step = (end_percent - start_percent) / pieces;
 
-	auto cpu_index1 = load_index(start_percent, start_percent + length * (1 - gpu_part), cfg);
-	auto cpu_index2 = load_index(start_percent + length * (1 - gpu_part), end_percent, cfg);
-
-	QueryQueue* qq1 = new QueryQueue("queue@1", cpu_index1, & qm);
-	QueryQueue* qq2 = new QueryQueue("queue@2", cpu_index2, & qm);
-	qm.setStartingGPUQueue(qq2, res);
+	for (int i = 0; i < pieces; i++) {
+		auto cpu_index = load_index(start_percent + i * step, start_percent + (i+1) * step, cfg);
+		QueryQueue* qq = new QueryQueue(cpu_index, &qm);
+		
+		if (i < gpu_pieces) {
+			qq->create_gpu_index(res);
+		}
+	}
 
 	bool finished = false;
 	std::thread receiver { comm_handler, & query_buffer, & distance_buffer, & label_buffer, std::ref(finished), std::ref(cfg) };
