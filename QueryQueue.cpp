@@ -3,7 +3,7 @@
 #include "utils.h"
 
 QueryQueue::QueryQueue(faiss::IndexIVFPQ* index, QueueManager* _qm) :
-		start_query_id(0), on_gpu(false), _cpu_index(index), qm(_qm), gpu_index(nullptr) {
+		_start_query_id(0), on_gpu(false), _cpu_index(index), qm(_qm), gpu_index(nullptr) {
 	_label_buffer = new Buffer(sizeof(faiss::Index::idx_t) * cfg.k, 1000000);
 	_distance_buffer = new Buffer(sizeof(float) * cfg.k, 1000000);
 	qm->addQueryQueue(this);
@@ -17,33 +17,40 @@ Buffer* QueryQueue::distance_buffer() {
 	return _distance_buffer;
 }
 
-long QueryQueue::size() {
-	return qm->numberOfQueries(start_query_id);;
+Size QueryQueue::size() {
+	std::unique_lock<std::mutex> { mutex_delete_me_pls };
+	auto sz = qm->numberOfQueries(_start_query_id);
+//	assert(sz >= 0);
+	return sz;
 }
 
 faiss::IndexIVFPQ* QueryQueue::cpu_index() {
 	return _cpu_index;
 }
 
-long QueryQueue::search(int nqueries) {
-	if (nqueries == 0 || nqueries > size()) return 0;
+void QueryQueue::search(int nqueries) {
+	std::unique_lock<std::mutex> { mutex_delete_me_pls };
+	
+	if (nqueries == 0) return;
+	
+	auto sz = size();
+	assert(sz.buffer_start_query_id + sz.queries_in_buffer >= sz.starting_query_id);
 
-	faiss::Index* index = on_gpu ? dynamic_cast<faiss::Index*>(gpu_index) : dynamic_cast<faiss::Index*>(_cpu_index);
+	faiss::Index* index = on_gpu ? static_cast<faiss::Index*>(gpu_index) : static_cast<faiss::Index*>(_cpu_index);
 	faiss::Index::idx_t* labels = (faiss::Index::idx_t*) _label_buffer->peekEnd();
 	float* distances = (float*) _distance_buffer->peekEnd();
-	float* query_start = qm->ptrToQueryBuffer(start_query_id);
-
-	start_query_id += nqueries;
+	float* query_start = qm->ptrToQueryBuffer(_start_query_id);
 
 	_label_buffer->waitForSpace(nqueries);
 	_distance_buffer->waitForSpace(nqueries);
 
-	index->search(nqueries, query_start, cfg.k, distances, labels);
+//	std::printf("searching %d queries\n", nqueries);
+	index->search(nqueries, query_start, cfg.k, distances, labels);	
 
 	_label_buffer->add(nqueries);
 	_distance_buffer->add(nqueries);
-	
-	return nqueries;
+
+	_start_query_id += nqueries;
 }
 
 long QueryQueue::results_size() {
@@ -58,4 +65,9 @@ void QueryQueue::clear_result_buffer(int nqueries) {
 void QueryQueue::create_gpu_index(faiss::gpu::StandardGpuResources& res) {
 	gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(& res, 0, _cpu_index, nullptr));
 	on_gpu = true;
+}
+
+long QueryQueue::start_query_id() {
+	std::unique_lock<std::mutex> { mutex_delete_me_pls };
+	return _start_query_id;
 }

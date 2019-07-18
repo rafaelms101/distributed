@@ -114,7 +114,7 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 	}
 
 	deb("R@1 = %.4f", n_1 / float(cfg.eval_length));
-	deb("R@10 = %.4f", n_10 / float(cfg.eval_length));
+	std::printf("R@10 = %.4f", n_10 / float(cfg.eval_length));
 	deb("R@100 = %.4f", n_100 / float(cfg.eval_length));
 	
 	delete [] gt;

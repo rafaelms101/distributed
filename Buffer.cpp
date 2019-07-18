@@ -25,6 +25,7 @@ double Buffer::block_interval() {
 
 inline void Buffer::maybe_realign() {
 	if (start >= 0.4 * total_size) {
+		assert(false);
 		//move to the beginning
 		std::memmove(data, data + start, used());
 		end = used();
@@ -35,6 +36,7 @@ inline void Buffer::maybe_realign() {
 void Buffer::add(const long qty) {
 	std::unique_lock<std::mutex> { mutex };
 
+	//TODO: this should be outside of this class
 	double n = now();
 	time_between_blocks = n - last_block_time;
 	last_block_time = n;
