@@ -3,7 +3,8 @@
 #include "utils.h"
 
 void QueueManager::shrinkQueryBuffer() {
-	std::unique_lock<std::mutex> { mutex_buffer_start };
+	mutex_buffer_start.lock();
+	
 	long min_query_id = std::numeric_limits<long>::max();
 
 	for (QueryQueue* qq : _queues) {
@@ -14,14 +15,14 @@ void QueueManager::shrinkQueryBuffer() {
 		}
 	}
 	
-	if (min_query_id == buffer_start_query_id) return;
+	if (min_query_id > buffer_start_query_id) {
+		assert(min_query_id > buffer_start_query_id);
+		assert((min_query_id - buffer_start_query_id) % cfg.block_size == 0);
+		query_buffer->consume((min_query_id - buffer_start_query_id) / cfg.block_size);
+		buffer_start_query_id = min_query_id;
+	}
 	
-	assert(min_query_id > buffer_start_query_id);
-	assert((min_query_id - buffer_start_query_id) % cfg.block_size == 0);
-
-	
-	query_buffer->consume((min_query_id - buffer_start_query_id) / cfg.block_size);
-	buffer_start_query_id = min_query_id;
+	mutex_buffer_start.unlock();
 }
 
 void QueueManager::mergeResults() {
@@ -55,24 +56,6 @@ void QueueManager::mergeResults() {
 	float* distance_array = reinterpret_cast<float*>(distance_buffer->peekEnd());
 	faiss::Index::idx_t* label_array = reinterpret_cast<faiss::Index::idx_t*>(label_buffer->peekEnd());
 
-	auto oda = distance_array;
-	auto ola = label_array;
-//
-//	if (_sent_queries >= 325) {
-//		deb("joining: ");
-//
-//		for (int i = 0; i < idxs.size(); i++) {
-//			deb("Vector %d", i);
-//			for (int q = 0; q < 5; q++) {
-//				deb("Query %ld", q + _sent_queries);
-//				for (int j = 0; j < cfg.k; j++) {
-//					deb("%f", all_distances[i][q * cfg.k + j]);
-//				}
-//			}
-//		}
-//	}
-
-
 	for (int q = 0; q < num_queries; q++) {
 		for (int i = 0; i < _queues.size(); i++) {
 			idxs[i] = q * cfg.k;
@@ -95,14 +78,6 @@ void QueueManager::mergeResults() {
 			idxs[from]++;
 		}
 	}
-	
-
-//	for (int q = 0; q < num_queries; q++) {
-//		std::printf("Query %ld\n", q + _sent_queries);
-//		for (int j = 0; j < cfg.k; j++) {
-//			std::printf("%ld: %f\n", ola[q * cfg.k + j], oda[q * cfg.k + j]);
-//		}
-//	}
 
 	distance_buffer->add(num_queries / cfg.block_size);
 	label_buffer->add(num_queries / cfg.block_size);
@@ -141,7 +116,7 @@ long QueueManager::cpu_load() {
 	for (QueryQueue* qq : _queues) {
 		if (qq->on_gpu) continue;
 
-		load += qq->size().size;
+		load += qq->size();
 	}
 
 	return load;
@@ -151,7 +126,7 @@ QueryQueue* QueueManager::biggestCPUQueue() {
 	QueryQueue* biggest = _queues.front();
 
 	for (QueryQueue* qq : _queues) {
-		if (! qq->on_gpu && qq->size().size > biggest->size().size) {
+		if (! qq->on_gpu && qq->size() > biggest->size()) {
 			biggest = qq;
 		}
 	}
@@ -168,25 +143,18 @@ QueryQueue* QueueManager::firstGPUQueue() {
 }
 
 float* QueueManager::ptrToQueryBuffer(long query_id) {
-	std::unique_lock<std::mutex> { mutex_buffer_start };
-	return reinterpret_cast<float*>(query_buffer->peekFront()) + (query_id - buffer_start_query_id) * cfg.d;
+	mutex_buffer_start.lock();
+	auto ret = reinterpret_cast<float*>(query_buffer->peekFront()) + (query_id - buffer_start_query_id) * cfg.d;
+	mutex_buffer_start.unlock();
+	return ret;
 }
 
-Size QueueManager::numberOfQueries(long starting_query_id) {
-	std::unique_lock<std::mutex> { mutex_buffer_start };
-	Size size;
-	size.buffer_start_query_id = buffer_start_query_id; //AUMENTA
-	size.queries_in_buffer = query_buffer->entries() * cfg.block_size; //CONTINUA IGUAL
-	size.starting_query_id = starting_query_id;
-	size.size = size.queries_in_buffer - (size.starting_query_id - size.buffer_start_query_id);
-//	auto sz = query_buffer->entries() * cfg.block_size - (starting_query_id - buffer_start_query_id);
-
-//	if (sz < 0) {
-//		std::printf("@%d * %d - (%ld - %ld) = %ld\n", query_buffer->entries(), cfg.block_size, starting_query_id, buffer_start_query_id, sz);
-//	}
-//
-//	assert(sz >= 0);
-	return size;
+long QueueManager::numberOfQueries(long starting_query_id) {
+	mutex_buffer_start.lock();
+	auto sz = query_buffer->entries() * cfg.block_size - (starting_query_id - buffer_start_query_id);
+	mutex_buffer_start.unlock();
+	
+	return sz;
 }
 
 void QueueManager::switchToGPU(QueryQueue* to_gpu) {

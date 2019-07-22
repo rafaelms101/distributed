@@ -17,8 +17,7 @@ Buffer* QueryQueue::distance_buffer() {
 	return _distance_buffer;
 }
 
-Size QueryQueue::size() {
-	std::unique_lock<std::mutex> { mutex_delete_me_pls };
+long QueryQueue::size() {
 	auto sz = qm->numberOfQueries(_start_query_id);
 //	assert(sz >= 0);
 	return sz;
@@ -29,18 +28,17 @@ faiss::IndexIVFPQ* QueryQueue::cpu_index() {
 }
 
 void QueryQueue::search(int nqueries) {
-	std::unique_lock<std::mutex> { mutex_delete_me_pls };
-	
 	if (nqueries == 0) return;
 	
-	auto sz = size();
-	assert(sz.buffer_start_query_id + sz.queries_in_buffer >= sz.starting_query_id);
-
+	
 	faiss::Index* index = on_gpu ? static_cast<faiss::Index*>(gpu_index) : static_cast<faiss::Index*>(_cpu_index);
 	faiss::Index::idx_t* labels = (faiss::Index::idx_t*) _label_buffer->peekEnd();
 	float* distances = (float*) _distance_buffer->peekEnd();
 	float* query_start = qm->ptrToQueryBuffer(_start_query_id);
 
+	//TODO: THIS IS UNSAFE, what would happen if the gpu and cpu tried to execute this on the same queue at the same time????????????????
+	_start_query_id += nqueries;
+	
 	_label_buffer->waitForSpace(nqueries);
 	_distance_buffer->waitForSpace(nqueries);
 
@@ -49,8 +47,8 @@ void QueryQueue::search(int nqueries) {
 
 	_label_buffer->add(nqueries);
 	_distance_buffer->add(nqueries);
-
-	_start_query_id += nqueries;
+//
+//	_start_query_id += nqueries;
 }
 
 long QueryQueue::results_size() {
@@ -68,6 +66,5 @@ void QueryQueue::create_gpu_index(faiss::gpu::StandardGpuResources& res) {
 }
 
 long QueryQueue::start_query_id() {
-	std::unique_lock<std::mutex> { mutex_delete_me_pls };
 	return _start_query_id;
 }

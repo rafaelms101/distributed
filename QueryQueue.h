@@ -19,8 +19,6 @@ class QueryQueue {
 	Buffer* _distance_buffer;
 	long _start_query_id;
 	
-	std::mutex mutex_delete_me_pls;
-	
 public:
 	long start_query_id();
 
@@ -31,7 +29,7 @@ public:
 	QueryQueue(faiss::IndexIVFPQ*, QueueManager*);
 	Buffer* label_buffer();
 	Buffer* distance_buffer();
-	Size size();
+	long size();
 	faiss::IndexIVFPQ* cpu_index();
 	
 	long results_size();

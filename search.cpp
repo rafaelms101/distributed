@@ -126,18 +126,23 @@ static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
 
 #define THRES 80l
 
+std::mutex cleanup_mutex;
+
 static void cpu_process(QueueManager* qm) {
 	while (qm->sent_queries() < cfg.test_length) {
 		for (QueryQueue* qq : qm->queues()) {
 			if (qq->on_gpu) continue;
-			auto size = qq->size();
-			long nq = std::min(size.size, THRES);
+			long nq = std::min(qq->size(), THRES);
 			assert(nq >= 0);
+			if (nq > 0) std::printf("searching %d queries on cpu\n", nq);
 			qq->search(nq);
 		}
 
-		qm->shrinkQueryBuffer();
-		qm->mergeResults();
+//		if (qm->gpu_loading() && cleanup_mutex.try_lock()) {
+//			qm->shrinkQueryBuffer();
+//			qm->mergeResults();
+//		}
+		
 	}
 }
 
@@ -148,33 +153,22 @@ static void gpu_process(QueueManager* qm) {
 		for (QueryQueue* qq : qm->queues()) {
 			if (! qq->on_gpu) continue;
 
-			auto size = qq->size();
-			long nq = std::min(size.size, THRES);
-			auto after_size = qq->size();
-			
-			if (after_size.size < size.size) {
-				std::printf("[ERROR1] buffer start: %ld -> %ld, entries: %ld -> %ld, start query id: %ld -> %ld\n", size.buffer_start_query_id, after_size.buffer_start_query_id, size.queries_in_buffer, after_size.queries_in_buffer, size.starting_query_id, after_size.starting_query_id);
-			}
-//			
-//			assert(nq <= after_size.size); //FAILED HERE
-			
-			if (nq < 0) {
-				std::printf("[ERROR2] buffer start: %ld , entries: %ld , start query id: %ld \n", size.buffer_start_query_id,  size.queries_in_buffer,  size.starting_query_id);
-			}
-			
+			long nq = std::min(qq->size(), THRES);
 			assert(nq >= 0);
 
+			if (nq > 0) std::printf("searching %d queries on gpu\n", nq);
 			qq->search(nq);
 			emptyQueue = emptyQueue && nq == 0;
-//			assert(qq->size().size >= 0);
 		}
-
-//		qm->shrinkQueryBuffer();
-//		qm->mergeResults();
+//
+//		if (cleanup_mutex.try_lock()) {
+			qm->shrinkQueryBuffer();
+			qm->mergeResults();
+//		}
 
 //		if (emptyQueue) {
 //			QueryQueue* qq = qm->biggestCPUQueue();
-			
+//			
 //			if (qq->size() > 1000) { //arbitrary threshold
 //				qm->switchToGPU(qq);
 //			}
@@ -263,8 +257,7 @@ void merge(long num_queries, std::vector<float*>& all_distances, std::vector<fai
 static void search_hybrid(Buffer& query_buffer, Buffer& distance_buffer, Buffer& label_buffer, faiss::gpu::StandardGpuResources& res, int shard, int nshards) {
 	QueueManager qm(& query_buffer, & label_buffer, & distance_buffer);
 
-	//TODO: a potencial problem is that we might be reading the entire database first, and then cutting it. This might be a problem in huge databases.
-	//TODO: we are assuming that we are dividing the database in two parts
+	//TODO: a potential problem is that we might be reading the entire database first, and then cutting it. This might be a problem in huge databases.
 	float start_percent = float(shard) / nshards;
 	float end_percent = float(shard + 1) / nshards;
 	
