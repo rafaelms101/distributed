@@ -18,6 +18,8 @@ class QueryQueue {
 	Buffer* _label_buffer;
 	Buffer* _distance_buffer;
 	long _start_query_id;
+	std::mutex queue_mutex;
+	
 	
 public:
 	long start_query_id();
@@ -31,6 +33,8 @@ public:
 	Buffer* distance_buffer();
 	long size();
 	faiss::IndexIVFPQ* cpu_index();
+	void lock();
+	void unlock();
 	
 	long results_size();
 	void clear_result_buffer(int nqueries);

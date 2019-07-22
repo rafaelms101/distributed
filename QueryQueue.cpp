@@ -68,3 +68,11 @@ void QueryQueue::create_gpu_index(faiss::gpu::StandardGpuResources& res) {
 long QueryQueue::start_query_id() {
 	return _start_query_id;
 }
+
+void QueryQueue::lock() {
+	queue_mutex.lock();
+}
+
+void QueryQueue::unlock() {
+	queue_mutex.unlock();
+}

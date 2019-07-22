@@ -132,17 +132,22 @@ static void cpu_process(QueueManager* qm) {
 	while (qm->sent_queries() < cfg.test_length) {
 		for (QueryQueue* qq : qm->queues()) {
 			if (qq->on_gpu) continue;
+			
+			qq->lock();
+			
 			long nq = std::min(qq->size(), THRES);
 			assert(nq >= 0);
 			if (nq > 0) std::printf("searching %d queries on cpu\n", nq);
 			qq->search(nq);
+			
+			qq->unlock();
 		}
 
-//		if (qm->gpu_loading() && cleanup_mutex.try_lock()) {
-//			qm->shrinkQueryBuffer();
-//			qm->mergeResults();
-//		}
-		
+		if (qm->gpu_loading() && cleanup_mutex.try_lock()) {
+			qm->shrinkQueryBuffer();
+			qm->mergeResults();
+			cleanup_mutex.unlock();
+		}
 	}
 }
 
@@ -152,27 +157,33 @@ static void gpu_process(QueueManager* qm) {
 		
 		for (QueryQueue* qq : qm->queues()) {
 			if (! qq->on_gpu) continue;
+			
+			qq->lock();
 
 			long nq = std::min(qq->size(), THRES);
 			assert(nq >= 0);
 
 			if (nq > 0) std::printf("searching %d queries on gpu\n", nq);
 			qq->search(nq);
+			
+			qq->unlock();
+			
 			emptyQueue = emptyQueue && nq == 0;
 		}
 //
-//		if (cleanup_mutex.try_lock()) {
+		if (cleanup_mutex.try_lock()) {
 			qm->shrinkQueryBuffer();
 			qm->mergeResults();
-//		}
+			cleanup_mutex.unlock();
+		}
 
-//		if (emptyQueue) {
-//			QueryQueue* qq = qm->biggestCPUQueue();
-//			
-//			if (qq->size() > 1000) { //arbitrary threshold
-//				qm->switchToGPU(qq);
-//			}
-//		}
+		if (emptyQueue) {
+			QueryQueue* qq = qm->biggestCPUQueue();
+			
+			if (qq->size() > 1000) { //arbitrary threshold
+				qm->switchToGPU(qq);
+			}
+		}
 	}
 }
 
