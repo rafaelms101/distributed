@@ -146,17 +146,14 @@ faiss::Index::idx_t* load_gt(int nb, int k) {
 int main(int argc, char** argv) {
 	Config cfg;
 	
-	if (argc != 7) {
-		std::printf("Wrong usage.\n./simple <cpu|gpu> <begin> <end> <step> <ncentroids> <nprobe>\n");
+	if (argc != 5) {
+		std::printf("Wrong usage.\n./simple <cpu|gpu> <begin> <end> <step>\n");
 	}
 
 	bool gpu = ! strcmp("gpu", argv[1]);
 	int begin = atoi(argv[2]);
 	int end = atoi(argv[3]);
 	int step = atoi(argv[4]);
-	
-	cfg.ncentroids = atoi(argv[5]);
-	cfg.nprobe = atoi(argv[6]);
 
 	faiss::gpu::StandardGpuResources res;
 	res.setTempMemory(1350 * 1024 * 1024); 
