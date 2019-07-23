@@ -8,6 +8,7 @@ constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are 
 constexpr int BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
 
 enum class RequestDistribution {Constant, Variable_Poisson};
+enum class SearchAlgorithm {Cpu, Hybrid};
 
 class ExecPolicy;
 
@@ -34,7 +35,11 @@ struct Config {
 	int processing_size;
 	bool only_min;
 	
-	ExecPolicy* exec_policy = nullptr;
+	SearchAlgorithm search_algorithm;
+	
+	//hybrid params
+	long gpu_pieces;
+	long total_pieces;
 };
 
 extern Config cfg;

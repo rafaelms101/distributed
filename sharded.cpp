@@ -10,9 +10,9 @@
 #include "ExecPolicy.h"
 
 void handle_parameters(int argc, char* argv[]) {
-	std::string usage = "./sharded <c|p> <query_interval> <alg> <seed>";
+	std::string usage = "./sharded <c|p> <query_interval> <seed> <alg> [<params>]";
 
-	if (argc != 5) {
+	if (argc < 5) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
 		std::exit(-1);
 	}
@@ -27,8 +27,23 @@ void handle_parameters(int argc, char* argv[]) {
 	}
 
 	cfg.query_interval = std::atof(argv[2]);
-
-	srand(std::atoi(argv[4]));
+	srand(std::atoi(argv[3]));
+	
+	if (! std::strcmp(argv[4], "c")) {
+		cfg.search_algorithm = SearchAlgorithm::Cpu;
+	} else if (! std::strcmp(argv[4], "h")) {
+		if (argc != 7) {
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::exit(- 1);
+		}
+		
+		cfg.search_algorithm = SearchAlgorithm::Hybrid;
+		cfg.gpu_pieces = atoi(argv[5]);
+		cfg.total_pieces = atoi(argv[6]);
+	} else  {
+		std::printf("Wrong algorithm.\n");
+		std::exit(-1);
+	} 
 }
 
 int main(int argc, char* argv[]) {

@@ -124,34 +124,28 @@ static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
 	file.close();
 }
 
-#define THRES 80l
-
-std::mutex cleanup_mutex;
-
-static void cpu_process(QueueManager* qm) {
+static void cpu_process(QueueManager* qm, std::mutex* cleanup_mutex) {
 	while (qm->sent_queries() < cfg.test_length) {
 		for (QueryQueue* qq : qm->queues()) {
 			if (qq->on_gpu) continue;
 			
 			qq->lock();
 			
-			long nq = std::min(qq->size(), THRES);
+			long nq = std::min(qq->size(), 120l);
 			assert(nq >= 0);
-			if (nq > 0) std::printf("searching %d queries on cpu\n", nq);
 			qq->search(nq);
-			
 			qq->unlock();
 		}
 
-		if (qm->gpu_loading() && cleanup_mutex.try_lock()) {
+		if (qm->gpu_loading() && cleanup_mutex->try_lock()) {
 			qm->shrinkQueryBuffer();
 			qm->mergeResults();
-			cleanup_mutex.unlock();
+			cleanup_mutex->unlock();
 		}
 	}
 }
 
-static void gpu_process(QueueManager* qm) {
+static void gpu_process(QueueManager* qm, std::mutex* cleanup_mutex) {
 	while (qm->sent_queries() < cfg.test_length) {
 		bool emptyQueue = true;
 		
@@ -160,21 +154,19 @@ static void gpu_process(QueueManager* qm) {
 			
 			qq->lock();
 
-			long nq = std::min(qq->size(), THRES);
+			long nq = std::min(qq->size(), 120l);
 			assert(nq >= 0);
-
-			if (nq > 0) std::printf("searching %d queries on gpu\n", nq);
-			qq->search(nq);
 			
+			qq->search(nq);
 			qq->unlock();
 			
 			emptyQueue = emptyQueue && nq == 0;
 		}
 //
-		if (cleanup_mutex.try_lock()) {
+		if (cleanup_mutex->try_lock()) {
 			qm->shrinkQueryBuffer();
 			qm->mergeResults();
-			cleanup_mutex.unlock();
+			cleanup_mutex->unlock();
 		}
 
 		if (emptyQueue) {
@@ -215,16 +207,7 @@ static void search_cpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 
 		cpu_index->search(nqueries, query_start, cfg.k, distances, labels);
 
-		for (int q = 0; q < nqueries; q++) {
-			std::printf("Query %ld\n", sent + q);
-			for (int j = 0; j < cfg.k; j++) {
-				std::printf("%ld: %f\n", labels[q * cfg.k + j], distances[q * cfg.k + j]);
-			}
-		}
-
-
 		query_buffer.consume(nblocks);
-
 		label_buffer.add(nblocks);
 		distance_buffer.add(nblocks);
 
@@ -272,8 +255,8 @@ static void search_hybrid(Buffer& query_buffer, Buffer& distance_buffer, Buffer&
 	float start_percent = float(shard) / nshards;
 	float end_percent = float(shard + 1) / nshards;
 	
-	long pieces = 2;
-	float gpu_pieces = 1;
+	long pieces = cfg.total_pieces;
+	float gpu_pieces = cfg.gpu_pieces;
 	float step = (end_percent - start_percent) / pieces;
 
 	for (int i = 0; i < pieces; i++) {
@@ -285,11 +268,13 @@ static void search_hybrid(Buffer& query_buffer, Buffer& distance_buffer, Buffer&
 			qq->create_gpu_index(res);
 		}
 	}
-
+	
+	std::mutex cleanup_mutex;
+	
 	bool finished = false;
-	std::thread receiver { comm_handler, & query_buffer, & distance_buffer, & label_buffer, std::ref(finished), std::ref(cfg) };
-	std::thread gpu_thread { gpu_process, & qm };
-	std::thread cpu_thread { cpu_process, & qm };
+	std::thread receiver { comm_handler, &query_buffer, &distance_buffer, &label_buffer, std::ref(finished), std::ref(cfg) };
+	std::thread gpu_thread { gpu_process, &qm, &cleanup_mutex };
+	std::thread cpu_thread { cpu_process, &qm, &cleanup_mutex };
 
 	receiver.join();
 	cpu_thread.join();
@@ -308,6 +293,9 @@ void search(int shard, int nshards, Config& cfg) {
 	faiss::gpu::StandardGpuResources res;
 	res.setTempMemory(1500 * 1024 * 1024);
 	
-	search_hybrid(query_buffer, distance_buffer, label_buffer, res, shard, nshards);
-//	search_cpu(query_buffer, distance_buffer, label_buffer, shard, nshards);
+	if (cfg.search_algorithm == SearchAlgorithm::Cpu) {
+		search_cpu(query_buffer, distance_buffer, label_buffer, shard, nshards);
+	} else if (cfg.search_algorithm == SearchAlgorithm::Hybrid) {
+		search_hybrid(query_buffer, distance_buffer, label_buffer, res, shard, nshards);
+	}
 }
