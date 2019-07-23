@@ -137,7 +137,7 @@ static void cpu_process(QueueManager* qm, std::mutex* cleanup_mutex) {
 			qq->unlock();
 		}
 
-		if (qm->gpu_loading() && cleanup_mutex->try_lock()) {
+		if (cleanup_mutex->try_lock()) {
 			qm->shrinkQueryBuffer();
 			qm->mergeResults();
 			cleanup_mutex->unlock();
