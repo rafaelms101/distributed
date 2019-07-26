@@ -31,6 +31,14 @@ void handle_parameters(int argc, char* argv[]) {
 	
 	if (! std::strcmp(argv[4], "c")) {
 		cfg.search_algorithm = SearchAlgorithm::Cpu;
+	} else if (! std::strcmp(argv[4], "g")) {
+		if (argc != 6) {
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::exit(-1);
+		}
+		
+		cfg.search_algorithm = SearchAlgorithm::Gpu;
+		cfg.total_pieces = atoi(argv[5]);
 	} else if (! std::strcmp(argv[4], "h")) {
 		if (argc != 7) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
