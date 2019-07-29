@@ -175,11 +175,12 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 			idx++;
 		}
 		
-//		std::printf("%lf\n", total / interval_size);
 		aggregate_total += total;
 	}
+	
+	assert(start_time[0] <= end_time[cfg.eval_length - 1]);
 
-	std::printf("%lf\n", aggregate_total / cfg.eval_length);
+	std::printf("%lf, %lf\n", aggregate_total / cfg.eval_length, end_time[cfg.eval_length - 1] - start_time[0]);
 }
 
 static void single_block_size_generator(int nshards, double* query_start_time, Config& cfg) {
