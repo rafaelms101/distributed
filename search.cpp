@@ -125,8 +125,26 @@ static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
 	file.close();
 }
 
+
+static void printResult(long num_queries, float* distance_array, faiss::Index::idx_t* label_array) {
+	static long qn = 0;
+		for (int q = 0; q < num_queries; q++) {
+			std::printf("Query %ld\n", qn);
+			qn++;
+			
+			for (int i = 0; i < cfg.k; i++) {
+				std::printf("%ld: %f\n", label_array[q * cfg.k + i], distance_array[q * cfg.k + i]);
+			}
+		}
+}
+
 static void merge(long num_queries, std::vector<float*>& all_distances, std::vector<faiss::Index::idx_t*>& all_labels, float* distance_array, faiss::Index::idx_t* label_array) {
+	static long qn = 0;
+	
 	if (num_queries == 0) return;
+	
+	auto oda = distance_array;
+	auto ola = label_array;
 	
 	std::vector<long> idxs(all_distances.size());
 
@@ -249,6 +267,39 @@ static void search_cpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 	receiver.join();
 }
 
+static void merge_procedure(long& buffer_start_id, long& sent, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*>& all_label_buffers, Buffer& distance_buffer, Buffer& label_buffer) {
+	//merge
+	auto num_queries = buffer_start_id - sent;
+	
+	if (num_queries == 0) return;
+	assert(num_queries > 0);
+	
+	std::vector<float*> all_distances;
+	std::vector<faiss::Index::idx_t*> all_labels;
+	for (int i = 0; i < all_distance_buffers.size(); i++) {
+		auto dptr = (float*) all_distance_buffers[i]->peekFront();
+		auto lptr = (faiss::Index::idx_t*) all_label_buffers[i]->peekFront();
+		all_distances.push_back(dptr);
+		all_labels.push_back(lptr);
+	}
+
+	distance_buffer.waitForSpace(num_queries);
+	label_buffer.waitForSpace(num_queries);
+
+	merge(num_queries, all_distances, all_labels, reinterpret_cast<float*>(distance_buffer.peekEnd()), reinterpret_cast<faiss::Index::idx_t*>(label_buffer.peekEnd()));
+
+	distance_buffer.add(num_queries / cfg.block_size);
+	label_buffer.add(num_queries / cfg.block_size);
+
+	for (int i = 0; i < all_distance_buffers.size(); i++) {
+		all_distance_buffers[i]->consume(num_queries);
+		all_label_buffers[i]->consume(num_queries);
+	}
+
+	sent += num_queries;
+	deb("merged queries up to %ld", sent);
+}
+
 //TODO: pass as parameter instead of being a global
 std::condition_variable should_merge;
 std::mutex should_merge_mutex;
@@ -259,38 +310,145 @@ static void merger(long& buffer_start_id, std::vector<Buffer*>& all_distance_buf
 	
 	while (sent < cfg.test_length) {
 		if (buffer_start_id > sent) {
-			//merge
-			auto num_queries = buffer_start_id - sent;
-			std::vector<float*> all_distances;
-			std::vector<faiss::Index::idx_t*> all_labels;
-			for (int i = 0; i < all_distance_buffers.size(); i++) {
-				auto dptr = (float*) all_distance_buffers[i]->peekFront();
-				auto lptr = (faiss::Index::idx_t*) all_label_buffers[i]->peekFront();
-				all_distances.push_back(dptr);
-				all_labels.push_back(lptr);
-			}
-			
-			distance_buffer.waitForSpace(num_queries);
-			label_buffer.waitForSpace(num_queries);
-			
-			merge(num_queries, all_distances, all_labels, reinterpret_cast<float*>(distance_buffer.peekEnd()), reinterpret_cast<faiss::Index::idx_t*>(label_buffer.peekEnd()));
-			
-			distance_buffer.add(num_queries / cfg.block_size);
-			label_buffer.add(num_queries / cfg.block_size);
-			
-			for (int i = 0; i < all_distance_buffers.size(); i++) {
-				all_distance_buffers[i]->consume(num_queries);
-				all_label_buffers[i]->consume(num_queries);
-			}
-			
-			sent += num_queries;
-			deb("merged queries up to %ld", sent);
+			merge_procedure(buffer_start_id, sent, all_distance_buffers, all_label_buffers, distance_buffer, label_buffer);
 		} else {
 			should_merge.wait(lck, [&buffer_start_id, &sent] { return buffer_start_id > sent; });
 		}
 	}
 	
 	deb("Sent: %ld", sent);
+}
+
+//TODO: dont use globals like this, instead move it to a class or something
+std::mutex sync_mutex;
+
+static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long& sent, std::vector<long>& proc_ids, std::vector<faiss::IndexIVFPQ*>& all_gpu_bases, faiss::gpu::GpuIndexIVFPQ* gpu_index, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*> all_label_buffers) {
+	while (sent < cfg.test_length) {
+		for (int i = 1; i <= all_gpu_bases.size(); i++) {
+			sync_mutex.lock();
+			long buffer_idx = proc_ids[i] - buffer_start_id;
+			long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
+			auto buffer_ptr = (float*)(query_buffer.peekFront()) + buffer_idx * cfg.d;
+			sync_mutex.unlock();
+			
+			if (available_queries == 0) continue;
+			assert(available_queries > 0);
+			
+			gpu_index->copyFrom(all_gpu_bases[i - 1]); // we subtract 1 because this vector doesnt include the cpu entry (whereas the other ones - like proc_ids - do).
+			
+			while (available_queries >= 1) {
+				long nqueries = std::min(available_queries, 120l);
+				auto lb = all_label_buffers[i]; 
+				auto db = all_distance_buffers[i]; 
+				
+				lb->waitForSpace(nqueries);
+				db->waitForSpace(nqueries);
+				
+				deb("searching %ld queries on base %d", nqueries, i);
+				gpu_index->search(nqueries, buffer_ptr, cfg.k, (float*) db->peekEnd(), (faiss::Index::idx_t*) lb->peekEnd());
+				
+				lb->add(nqueries);
+				db->add(nqueries);
+				
+				available_queries -= nqueries;
+				proc_ids[i] += nqueries;
+				buffer_ptr += nqueries * cfg.d;
+			}
+		}
+	}
+}
+
+static void cpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long& sent, std::vector<long>& proc_ids, faiss::IndexIVFPQ* cpu_index, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*> all_label_buffers, Buffer& distance_buffer, Buffer& label_buffer) {
+	while (sent < cfg.test_length) {
+//		query_buffer.waitForData(1);
+		
+		long buffer_idx = proc_ids[0] - buffer_start_id;	
+		long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
+		
+		if (available_queries == 0) continue;
+		
+		auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
+		long nqueries = std::min(available_queries, 120l);
+		auto lb = all_label_buffers[0];
+		auto db = all_distance_buffers[0];
+
+		lb->waitForSpace(nqueries);
+		db->waitForSpace(nqueries);
+
+		deb("searching %ld queries on the cpu", nqueries);
+		cpu_index->search(nqueries, buffer_ptr, cfg.k, (float*) db->peekEnd(), (faiss::Index::idx_t*) lb->peekEnd());
+
+		lb->add(nqueries);
+		db->add(nqueries);
+
+		proc_ids[0] += nqueries;
+
+		auto min_id = *std::min_element(proc_ids.begin(), proc_ids.end());
+		if (min_id > buffer_start_id) {
+			sync_mutex.lock();
+			query_buffer.consume((min_id - buffer_start_id) / cfg.block_size);
+			buffer_start_id = min_id;
+			sync_mutex.unlock();
+
+			merge_procedure(buffer_start_id, sent, all_distance_buffers, all_label_buffers, distance_buffer, label_buffer);
+		}
+		
+	}
+}
+
+//TODO: make the algorithms classes instead
+static void search_cpu_fixed(Buffer& query_buffer, Buffer& distance_buffer, Buffer& label_buffer, faiss::gpu::StandardGpuResources& res, int shard, int nshards) {
+	//TODO: a potencial problem is that we might be reading the entire database first, and then cutting it. This might be a problem in huge databases.
+	//TODO: we are assuming that we are dividing the database in two parts
+
+	deb("search_gpu called");
+
+	float start_percent = float(shard) / nshards;
+	float end_percent = float(shard + 1) / nshards;
+	float total_share = end_percent - start_percent;
+
+	faiss::IndexIVFPQ* cpu_base;
+	std::vector<faiss::IndexIVFPQ*> all_gpu_bases;
+	faiss::gpu::GpuIndexIVFPQ* gpu_base;
+	
+	std::vector<Buffer*> all_distance_buffers;
+	std::vector<Buffer*> all_label_buffers;
+	std::vector<long> proc_ids;
+	
+	auto cpu_share = (cfg.total_pieces - cfg.gpu_pieces) / static_cast<float>(cfg.total_pieces);
+	
+	cpu_base = load_index(start_percent, start_percent + total_share * cpu_share, cfg);
+	deb("loading cpu base from %.2f to %.2f", start_percent, start_percent + total_share * cpu_share);
+	all_label_buffers.push_back(new Buffer(sizeof(faiss::Index::idx_t) * cfg.k, 1000000));
+	all_distance_buffers.push_back(new Buffer(sizeof(float) * cfg.k, 1000000));
+	proc_ids.push_back(0);
+	
+	auto gpu_share = total_share - cpu_share;
+	auto gpu_slice = gpu_share / cfg.gpu_pieces;
+	
+	for (int i = 0; i < cfg.gpu_pieces; i++) {
+		auto start = start_percent + cpu_share + gpu_slice * i;
+		auto end = start + gpu_slice;
+		all_gpu_bases.push_back(load_index(start, end, cfg));
+		deb("loading gpu base from %.2f to %.2f", start, end);
+		all_label_buffers.push_back(new Buffer(sizeof(faiss::Index::idx_t) * cfg.k, 1000000));
+		all_distance_buffers.push_back(new Buffer(sizeof(float) * cfg.k, 1000000));
+		proc_ids.push_back(0);
+	}
+
+	auto gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(&res, 0, all_gpu_bases[0], nullptr));
+	
+	bool finished = false;
+	std::thread receiver { comm_handler, &query_buffer, &distance_buffer, &label_buffer, std::ref(finished), std::ref(cfg) };
+
+	long sent = 0;
+	long buffer_start_id = 0;
+	std::thread cpu_process { cpu_process_fixed, std::ref(query_buffer), std::ref(buffer_start_id), std::ref(sent), std::ref(proc_ids), cpu_base, std::ref(all_distance_buffers), std::ref(all_label_buffers), std::ref(distance_buffer), std::ref(label_buffer) };
+	std::thread gpu_process { gpu_process_fixed, std::ref(query_buffer), std::ref(buffer_start_id), std::ref(sent), std::ref(proc_ids), std::ref(all_gpu_bases), gpu_index, std::ref(all_distance_buffers), std::ref(all_label_buffers) };
+	
+	receiver.join();
+	cpu_process.join();
+	gpu_process.join();
 }
 
 static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& label_buffer, faiss::gpu::StandardGpuResources& res, int shard, int nshards) {
@@ -361,11 +519,6 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 		}
 	}
 	
-	for (int i = 0; i < cfg.total_pieces; i++) {
-		deb("%ld distances stored in base %d", distance_buffers[i]->entries(), i);
-		deb("%ld labels stored in base %d", distance_buffers[i]->entries(), i);
-	}
-	
 	deb("search_gpu finished");
 	
 	
@@ -430,5 +583,7 @@ void search(int shard, int nshards, Config& cfg) {
 		search_hybrid(query_buffer, distance_buffer, label_buffer, res, shard, nshards);
 	} else if (cfg.search_algorithm == SearchAlgorithm::Gpu) {
 		search_gpu(query_buffer, distance_buffer, label_buffer, res, shard, nshards);
+	} else if (cfg.search_algorithm == SearchAlgorithm::CpuFixed) {
+		search_cpu_fixed(query_buffer, distance_buffer, label_buffer, res, shard, nshards);
 	}
 }

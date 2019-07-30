@@ -8,7 +8,7 @@ constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are 
 constexpr int BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
 
 enum class RequestDistribution {Constant, Variable_Poisson};
-enum class SearchAlgorithm {Cpu, Gpu, Hybrid};
+enum class SearchAlgorithm {Cpu, Gpu, Hybrid, CpuFixed};
 
 class ExecPolicy;
 
