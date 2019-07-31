@@ -325,6 +325,8 @@ std::mutex sync_mutex;
 static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long& sent, std::vector<long>& proc_ids, std::vector<faiss::IndexIVFPQ*>& all_gpu_bases, faiss::gpu::GpuIndexIVFPQ* gpu_index, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*> all_label_buffers) {
 	while (sent < cfg.test_length) {
 		for (int i = 1; i <= all_gpu_bases.size(); i++) {
+			if (proc_ids[i] == cfg.test_length) continue;
+			
 			sync_mutex.lock();
 			long buffer_idx = proc_ids[i] - buffer_start_id;
 			long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
@@ -365,23 +367,23 @@ static void cpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long&
 		long buffer_idx = proc_ids[0] - buffer_start_id;	
 		long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
 		
-		if (available_queries == 0) continue;
-		
-		auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
-		long nqueries = std::min(available_queries, 120l);
-		auto lb = all_label_buffers[0];
-		auto db = all_distance_buffers[0];
-
-		lb->waitForSpace(nqueries);
-		db->waitForSpace(nqueries);
-
-		deb("searching %ld queries on the cpu", nqueries);
-		cpu_index->search(nqueries, buffer_ptr, cfg.k, (float*) db->peekEnd(), (faiss::Index::idx_t*) lb->peekEnd());
-
-		lb->add(nqueries);
-		db->add(nqueries);
-
-		proc_ids[0] += nqueries;
+		if (available_queries > 0) {
+			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
+			long nqueries = std::min(available_queries, 120l);
+			auto lb = all_label_buffers[0];
+			auto db = all_distance_buffers[0];
+	
+			lb->waitForSpace(nqueries);
+			db->waitForSpace(nqueries);
+	
+			deb("searching %ld queries on the cpu", nqueries);
+			cpu_index->search(nqueries, buffer_ptr, cfg.k, (float*) db->peekEnd(), (faiss::Index::idx_t*) lb->peekEnd());
+	
+			lb->add(nqueries);
+			db->add(nqueries);
+	
+			proc_ids[0] += nqueries;
+		}
 
 		auto min_id = *std::min_element(proc_ids.begin(), proc_ids.end());
 		if (min_id > buffer_start_id) {
