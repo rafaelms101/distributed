@@ -323,6 +323,7 @@ static void merger(long& buffer_start_id, std::vector<Buffer*>& all_distance_buf
 std::mutex sync_mutex;
 
 static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long& sent, std::vector<long>& proc_ids, std::vector<faiss::IndexIVFPQ*>& all_gpu_bases, faiss::gpu::GpuIndexIVFPQ* gpu_index, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*> all_label_buffers) {
+	long current_base = 1;
 	while (sent < cfg.test_length) {
 		for (int i = 1; i <= all_gpu_bases.size(); i++) {
 			if (proc_ids[i] == cfg.test_length) continue;
@@ -336,7 +337,10 @@ static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long&
 			if (available_queries == 0) continue;
 			assert(available_queries > 0);
 			
-			gpu_index->copyFrom(all_gpu_bases[i - 1]); // we subtract 1 because this vector doesnt include the cpu entry (whereas the other ones - like proc_ids - do).
+			if (current_base != i) {
+				gpu_index->copyFrom(all_gpu_bases[i - 1]); // we subtract 1 because this vector doesnt include the cpu entry (whereas the other ones - like proc_ids - do).
+				current_base = i;
+			}
 			
 			while (available_queries >= 1) {
 				long nqueries = std::min(available_queries, 120l);
