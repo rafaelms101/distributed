@@ -23,6 +23,8 @@ class QueueManager {
 	std::mutex mutex_buffer_start;
 	
 public:
+	long bases_exchanged = 0;
+	
 	QueueManager(Buffer* _query_buffer, Buffer* _label_buffer, Buffer* _distance_buffer);
 	void addQueryQueue(QueryQueue* qq);
 	int sent_queries();

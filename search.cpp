@@ -225,6 +225,8 @@ static void gpu_process(QueueManager* qm, std::mutex* cleanup_mutex) {
 			}
 		}
 	}
+	
+	std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
 }
 
 static void search_cpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& label_buffer, int shard, int nshards) {
@@ -323,6 +325,8 @@ static void merger(long& buffer_start_id, std::vector<Buffer*>& all_distance_buf
 std::mutex sync_mutex;
 
 static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long& sent, std::vector<long>& proc_ids, std::vector<faiss::IndexIVFPQ*>& all_gpu_bases, faiss::gpu::GpuIndexIVFPQ* gpu_index, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*> all_label_buffers) {
+	long bases_exchanged = 0;
+	
 	long current_base = 1;
 	while (sent < cfg.test_length) {
 		for (int i = 1; i <= all_gpu_bases.size(); i++) {
@@ -340,6 +344,7 @@ static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long&
 			if (current_base != i) {
 				gpu_index->copyFrom(all_gpu_bases[i - 1]); // we subtract 1 because this vector doesnt include the cpu entry (whereas the other ones - like proc_ids - do).
 				current_base = i;
+				bases_exchanged++;
 			}
 			
 			while (available_queries >= 1) {
@@ -362,6 +367,8 @@ static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long&
 			}
 		}
 	}
+	
+	std::printf("bases exchanged: %ld\n", bases_exchanged);
 }
 
 static void cpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long& sent, std::vector<long>& proc_ids, faiss::IndexIVFPQ* cpu_index, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*> all_label_buffers, Buffer& distance_buffer, Buffer& label_buffer) {
@@ -463,6 +470,9 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 	
 	deb("search_gpu called");
 	
+	long current_base = 0;
+	long bases_exchanged = 0;
+	
 	float start_percent = float(shard) / nshards;
 	float end_percent = float(shard + 1) / nshards;
 	float step = (end_percent - start_percent) / cfg.total_pieces;
@@ -491,7 +501,12 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 		
 		//TODO: subclass buffer and create a QueryBuffer, that deals better with queries (aka. no more "* cfg.d" etc)
 		for (int i = 0; i < cpu_bases.size(); i++) {
-			gpu_index->copyFrom(cpu_bases[i]);
+			if (current_base != i) {
+				gpu_index->copyFrom(cpu_bases[i]);
+				current_base = i;
+				bases_exchanged++;
+			}
+			
 			long buffer_idx = proc_ids[i] - buffer_start_id;	
 			long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
 			auto buffer_ptr = (float*)(query_buffer.peekFront()) + buffer_idx * cfg.d;
@@ -527,7 +542,7 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 	
 	deb("search_gpu finished");
 	
-	
+	std::printf("bases exchanged: %ld\n", bases_exchanged);
 	
 	merge_thread.join();
 	receiver.join();

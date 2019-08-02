@@ -25,6 +25,7 @@ void QueueManager::shrinkQueryBuffer() {
 	mutex_buffer_start.unlock();
 }
 
+//TODO: move this function to outside this class, since the idea is somewhat generic and can be reused in a lot of scenarios
 void QueueManager::mergeResults() {
 	long num_queries = std::numeric_limits<long>::max();
 
@@ -165,6 +166,7 @@ void QueueManager::switchToGPU(QueryQueue* to_gpu) {
 	to_cpu->gpu_index = nullptr;
 	
 	_gpu_loading = true;
+	bases_exchanged++;
 	gpu_index->copyFrom(to_gpu->cpu_index());
 	to_gpu->gpu_index = gpu_index;
 	to_gpu->on_gpu = true;
