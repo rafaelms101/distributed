@@ -3,7 +3,7 @@
 
 constexpr int BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
 
-constexpr char SRC_PATH[] = "/homeLocal/rafaelms/faiss/benchs/bigann"; //folder where the bigann database is stored
+constexpr char SRC_PATH[] = "/home/rafael/mestrado/bigann"; //folder where the bigann database is stored
 constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are stored
 constexpr int BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
 
@@ -15,7 +15,7 @@ class ExecPolicy;
 struct Config {
 	//database config
 	const int d = 128; //vector dimension
-	const int nb = 500000000; //database size
+	const int nb = 10000000; //database size
 	const int ncentroids = 4096; //number of centroids
 	const int m = 8; //vector size after compression, in bytes
 	const int nq = 10000; //total number of distinct queries
