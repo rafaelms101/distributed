@@ -537,7 +537,11 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 		
 		//TODO: subclass buffer and create a QueryBuffer, that deals better with queries (aka. no more "* cfg.d" etc)
 		for (int i = 0; i < cpu_bases.size(); i++) {
-			if (current_base != i) {
+			long buffer_idx = proc_ids[i] - buffer_start_id;
+			long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
+			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
+			
+			if (current_base != i && available_queries >= 1) {
 				switches.push_back(std::make_pair(current_base, i));
 				for (int i = 0; i < proc_ids.size(); i++) {
 					log[bases_exchanged][i] = query_buffer.entries()
@@ -549,9 +553,7 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 				bases_exchanged++;
 			}
 			
-			long buffer_idx = proc_ids[i] - buffer_start_id;	
-			long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
-			auto buffer_ptr = (float*)(query_buffer.peekFront()) + buffer_idx * cfg.d;
+			
 			
 			while (available_queries >= 1) {
 				long nqueries = std::min(available_queries, 120l);
