@@ -161,6 +161,12 @@ long QueueManager::numberOfQueries(long starting_query_id) {
 void QueueManager::switchToGPU(QueryQueue* to_gpu) {
 	QueryQueue* to_cpu = firstGPUQueue();
 	
+	switches.push_back(std::make_pair(to_cpu->id, to_gpu->id));
+	for (auto q : _queues) {
+		log[bases_exchanged][q->id] = q->size();
+	}
+	
+	
 	to_cpu->on_gpu = false;
 	auto gpu_index = to_cpu->gpu_index;
 	to_cpu->gpu_index = nullptr;

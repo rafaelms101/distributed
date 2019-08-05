@@ -227,6 +227,18 @@ static void gpu_process(QueueManager* qm, std::mutex* cleanup_mutex) {
 	}
 	
 	std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
+	for (int j = 0; j < qm->bases_exchanged; j++) {
+		for (int i = 0; i < qm->_queues.size(); i++) {
+			if (i == qm->switches[j].first) {
+				std::printf("<");
+			} else if (i == qm->switches[j].second) {
+				std::printf(">");
+			}
+
+			std::printf("%ld ", qm->log[j][i]);
+		}
+		std::printf("\n");
+	}
 }
 
 static void search_cpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& label_buffer, int shard, int nshards) {
@@ -325,6 +337,8 @@ static void merger(long& buffer_start_id, std::vector<Buffer*>& all_distance_buf
 std::mutex sync_mutex;
 
 static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long& sent, std::vector<long>& proc_ids, std::vector<faiss::IndexIVFPQ*>& all_gpu_bases, faiss::gpu::GpuIndexIVFPQ* gpu_index, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*> all_label_buffers) {
+	long log[1000][proc_ids.size()];
+	std::vector<std::pair<int, int>> switches;
 	long bases_exchanged = 0;
 	
 	long current_base = 1;
@@ -342,6 +356,11 @@ static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long&
 			assert(available_queries > 0);
 			
 			if (current_base != i) {
+				switches.push_back(std::make_pair(current_base, i));
+				for (int i = 0; i < proc_ids.size(); i++) {
+					log[bases_exchanged][i] = query_buffer.entries() * cfg.block_size - (proc_ids[i] - buffer_start_id);
+				}
+				
 				gpu_index->copyFrom(all_gpu_bases[i - 1]); // we subtract 1 because this vector doesnt include the cpu entry (whereas the other ones - like proc_ids - do).
 				current_base = i;
 				bases_exchanged++;
@@ -369,6 +388,19 @@ static void gpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long&
 	}
 	
 	std::printf("bases exchanged: %ld\n", bases_exchanged);
+	for (int j = 0; j < bases_exchanged; j++) {
+		for (int i = 0; i < proc_ids.size(); i++) {
+			if (i == switches[j].first) {
+				std::printf("<");
+			} else if (i == switches[j].second) {
+				std::printf(">");
+			}
+			
+			std::printf("%ld ", log[j][i]);
+		}
+		std::printf("\n");
+	}
+	
 }
 
 static void cpu_process_fixed(Buffer& query_buffer, long& buffer_start_id, long& sent, std::vector<long>& proc_ids, faiss::IndexIVFPQ* cpu_index, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*> all_label_buffers, Buffer& distance_buffer, Buffer& label_buffer) {
@@ -562,7 +594,7 @@ static void search_hybrid(Buffer& query_buffer, Buffer& distance_buffer, Buffer&
 	for (int i = 0; i < pieces; i++) {
 		auto cpu_index = load_index(start_percent + i * step, start_percent + (i+1) * step, cfg);
 		deb("Creating index from %f to %f", start_percent + i * step, start_percent + (i+1) * step);
-		QueryQueue* qq = new QueryQueue(cpu_index, &qm);
+		QueryQueue* qq = new QueryQueue(cpu_index, &qm, i);
 		
 		if (i < gpu_pieces) {
 			qq->create_gpu_index(res);

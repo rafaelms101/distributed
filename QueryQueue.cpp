@@ -2,8 +2,8 @@
 
 #include "utils.h"
 
-QueryQueue::QueryQueue(faiss::IndexIVFPQ* index, QueueManager* _qm) :
-		_start_query_id(0), on_gpu(false), _cpu_index(index), qm(_qm), gpu_index(nullptr) {
+QueryQueue::QueryQueue(faiss::IndexIVFPQ* index, QueueManager* _qm, int _id) :
+		_start_query_id(0), on_gpu(false), _cpu_index(index), qm(_qm), gpu_index(nullptr), id(_id) {
 	_label_buffer = new Buffer(sizeof(faiss::Index::idx_t) * cfg.k, 1000000);
 	_distance_buffer = new Buffer(sizeof(float) * cfg.k, 1000000);
 	qm->addQueryQueue(this);

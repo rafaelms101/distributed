@@ -22,13 +22,15 @@ class QueryQueue {
 	
 	
 public:
+	int id;
+	
 	long start_query_id();
 
 	faiss::gpu::GpuIndexIVFPQ* gpu_index;
 
 	bool on_gpu;
 	
-	QueryQueue(faiss::IndexIVFPQ*, QueueManager*);
+	QueryQueue(faiss::IndexIVFPQ*, QueueManager*, int);
 	Buffer* label_buffer();
 	Buffer* distance_buffer();
 	long size();
