@@ -502,6 +502,7 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 	
 	deb("search_gpu called");
 	
+	
 	long current_base = 0;
 	long bases_exchanged = 0;
 	
@@ -524,6 +525,9 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 
 	auto gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_bases[0], nullptr));
 	
+	long log[1000][proc_ids.size()];
+	std::vector<std::pair<int, int>> switches;
+	
 	bool finished = false;
 	std::thread receiver { comm_handler, &query_buffer, &distance_buffer, &label_buffer, std::ref(finished), std::ref(cfg) };	
 	std::thread merge_thread { merger, std::ref(buffer_start_id), std::ref(all_distance_buffers), std::ref(all_label_buffers), std::ref(distance_buffer), std::ref(label_buffer) };
@@ -534,6 +538,12 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 		//TODO: subclass buffer and create a QueryBuffer, that deals better with queries (aka. no more "* cfg.d" etc)
 		for (int i = 0; i < cpu_bases.size(); i++) {
 			if (current_base != i) {
+				switches.push_back(std::make_pair(current_base, i));
+				for (int i = 0; i < proc_ids.size(); i++) {
+					log[bases_exchanged][i] = query_buffer.entries()
+							* cfg.block_size - (proc_ids[i] - buffer_start_id);
+				}
+				
 				gpu_index->copyFrom(cpu_bases[i]);
 				current_base = i;
 				bases_exchanged++;
@@ -574,10 +584,23 @@ static void search_gpu(Buffer& query_buffer, Buffer& distance_buffer, Buffer& la
 	
 	deb("search_gpu finished");
 	
-	std::printf("bases exchanged: %ld\n", bases_exchanged);
-	
 	merge_thread.join();
 	receiver.join();
+	
+	std::printf("bases exchanged: %ld\n", bases_exchanged);
+	
+	for (int j = 0; j < bases_exchanged; j++) {
+		for (int i = 0; i < proc_ids.size(); i++) {
+			if (i == switches[j].first) {
+				std::printf("<");
+			} else if (i == switches[j].second) {
+				std::printf(">");
+			}
+
+			std::printf("%ld ", log[j][i]);
+		}
+		std::printf("\n");
+	}
 }
 
 static void search_hybrid(Buffer& query_buffer, Buffer& distance_buffer, Buffer& label_buffer, faiss::gpu::StandardGpuResources& res, int shard, int nshards) {
