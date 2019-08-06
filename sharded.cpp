@@ -19,7 +19,7 @@ void handle_parameters(int argc, char* argv[]) {
 
 	if (! std::strcmp(argv[1], "c")) {
 		cfg.request_distribution = RequestDistribution::Constant;
-	} else if (! std::strcmp(argv[2], "p")) {
+	} else if (! std::strcmp(argv[1], "p")) {
 		cfg.request_distribution = RequestDistribution::Variable_Poisson;
 	} else {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
