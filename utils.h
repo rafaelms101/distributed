@@ -6,6 +6,8 @@
 
 #include "config.h"
 
+#include "faiss/IndexIVFPQ.h"
+
 //#define DEBUG
 
 #ifdef DEBUG
@@ -23,5 +25,6 @@ double now();
 int *ivecs_read(const char *fname, int *d_out, int *n_out);
 float *fvecs_read (const char *fname, int *d_out, int *n_out);
 std::vector<double> load_prof_times(Config&); 
+faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cfg);
 
 #endif /* UTILS_H_ */

@@ -8,6 +8,7 @@
 #include <fstream>
 
 #include "config.h"
+#include "readSplittedIndex.h"
 
 double now() {
     struct timeval tv;
@@ -77,4 +78,22 @@ std::vector<double> load_prof_times(Config& cfg) {
 	file.close();
 	
 	return times;
+}
+
+faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cfg) {
+	deb("Started loading");
+
+	char index_path[500];
+	sprintf(index_path, "%s/index_%d_%d_%d", INDEX_ROOT, cfg.nb, cfg.ncentroids, cfg.m);
+
+	deb("Loading file: %s", index_path);
+
+	FILE* index_file = fopen(index_path, "r");
+	auto cpu_index = static_cast<faiss::IndexIVFPQ*>(read_index(index_file, start_percent, end_percent));
+
+	deb("Ended loading");
+
+	//TODO: Maybe we shouldnt set nprobe here
+	cpu_index->nprobe = cfg.nprobe;
+	return cpu_index;
 }
