@@ -22,6 +22,6 @@ constexpr int GENERATOR = 1;
 double now();
 int *ivecs_read(const char *fname, int *d_out, int *n_out);
 float *fvecs_read (const char *fname, int *d_out, int *n_out);
-std::vector<double> load_prof_times(Config&); 
+std::vector<double> load_prof_times(int shard, Config&); 
 
 #endif /* UTILS_H_ */

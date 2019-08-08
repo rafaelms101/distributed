@@ -42,19 +42,23 @@ protected:
 	
 private:
 	std::pair<int, int> longest_contiguous_region(double min, double tolerance, std::vector<double>& time_per_block);
+	int shard;
 	
 public:
+	DynamicExecPolicy(int _shard) : shard(_shard) {} 
 	void setup();
 };
 
 
 class MinExecPolicy : public DynamicExecPolicy {
 public:
+	using DynamicExecPolicy::DynamicExecPolicy;
 	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);
 };
 
 class MaxExecPolicy : public DynamicExecPolicy {
 public:
+	using DynamicExecPolicy::DynamicExecPolicy;
 	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);
 };
 
@@ -63,6 +67,7 @@ private:
 	int processed = 0;
 	
 public:
+	using DynamicExecPolicy::DynamicExecPolicy;
 	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);	
 };
 
@@ -71,6 +76,7 @@ private:
 	int processed = 0;
 	
 public:
+	using DynamicExecPolicy::DynamicExecPolicy;
 	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);	
 };
 
@@ -78,6 +84,7 @@ public:
 
 class MinGreedyExecPolicy : public DynamicExecPolicy {
 public:
+	using DynamicExecPolicy::DynamicExecPolicy;
 	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);	
 };
 

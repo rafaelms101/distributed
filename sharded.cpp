@@ -9,8 +9,8 @@
 #include "config.h"
 #include "ExecPolicy.h"
 
-ProcType handle_parameters(int argc, char* argv[]) {
-	std::string usage = "./sharded b | d <c|p> <load> <min|max|q|gmin> <seed> | s <c|p> <load> <queries_per_block> <seed>";
+ProcType handle_parameters(int argc, char* argv[], int shard) {
+	std::string usage = "./sharded b | d <c|p> <query_interval> <min|max|q|gmin> <seed> | s <c|p> <query_interval> <queries_per_block> <seed>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -41,19 +41,18 @@ ProcType handle_parameters(int argc, char* argv[]) {
 			std::exit(-1);
 		}
 		
-		cfg.load_factor = std::atof(argv[3]);
-		
+		cfg.query_interval = std::atof(argv[3]);
 		
 		if (! std::strcmp(argv[4], "min")) {
-			cfg.exec_policy = new MinExecPolicy;
+			cfg.exec_policy = new MinExecPolicy(shard);
 		} else if (! std::strcmp(argv[4], "max")) {
-			cfg.exec_policy = new MaxExecPolicy;
+			cfg.exec_policy = new MaxExecPolicy(shard);
 		} else if (! std::strcmp(argv[4], "q")) {
-			cfg.exec_policy = new QueueExecPolicy;
+			cfg.exec_policy = new QueueExecPolicy(shard);
 		} else if (! std::strcmp(argv[4], "gmin")) {
-			cfg.exec_policy = new MinGreedyExecPolicy;
+			cfg.exec_policy = new MinGreedyExecPolicy(shard);
 		}  else if (! std::strcmp(argv[4], "qmax")) {
-			cfg.exec_policy = new QueueMaxExecPolicy;
+			cfg.exec_policy = new QueueMaxExecPolicy(shard);
 		} 
 		
 		srand(std::atoi(argv[5]));
@@ -72,7 +71,7 @@ ProcType handle_parameters(int argc, char* argv[]) {
 			std::exit(- 1);
 		}
 
-		cfg.load_factor = std::atof(argv[3]);
+		cfg.query_interval = std::atof(argv[3]);
 		
 		int nq = atoi(argv[4]); 
 		assert(nq <= cfg.eval_length);
@@ -96,7 +95,7 @@ int main(int argc, char* argv[]) {
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	
-	ProcType ptype = handle_parameters(argc, argv);
+	
 
     // Get the number of processes
     int world_size;
@@ -112,13 +111,18 @@ int main(int argc, char* argv[]) {
     MPI_Comm search_comm;
     MPI_Comm_create_group(MPI_COMM_WORLD, search_group, 0, &search_comm);
     
+    
+    int shard = world_rank - 2;
+    int nshards = world_size - 2;
+    ProcType ptype = handle_parameters(argc, argv, shard);
+    
 
     if (world_rank == 1) {
     	generator(world_size - 2, ptype, cfg);
     } else if (world_rank == 0) {
     	aggregator(world_size - 2, ptype, cfg);
     } else {
-    	search(world_rank - 2, world_size - 2, ptype, cfg);
+    	search(shard, nshards, ptype, cfg);
     }
     
     // Finalize the MPI environment.

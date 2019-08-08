@@ -93,12 +93,12 @@ static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
 	return cpu_index;
 }
 
-static void store_profile_data(std::vector<double>& procTimes, Config& cfg) {
+static void store_profile_data(std::vector<double>& procTimes, int shard_number, Config& cfg) {
 	system("mkdir -p prof"); //to make sure that the "prof" dir exists
 	
 	//now we write the time data on a file
 	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
 	std::ofstream file;
 	file.open(file_path);
 
@@ -197,7 +197,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	delete[] D;
 	
 	if (ptype == ProcType::Bench) {
-		store_profile_data(procTimesGpu, cfg);
+		store_profile_data(procTimesGpu, shard, cfg);
 	}
 
 	deb("Finished search node");
