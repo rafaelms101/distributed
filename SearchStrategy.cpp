@@ -116,7 +116,7 @@ void HybridSearchStrategy::gpu_process(std::mutex* cleanup_mutex) {
 
 			qq->lock();
 
-			long nq = std::min(qq->size(), queries_threshold);
+			long nq = std::min(qq->size(), best_query_point_gpu);
 			assert(nq >= 0);
 
 			qq->search(nq);
@@ -162,7 +162,7 @@ void HybridSearchStrategy::cpu_process(std::mutex* cleanup_mutex) {
 
 			qq->lock();
 
-			long nq = std::min(qq->size(), queries_threshold);
+			long nq = std::min(qq->size(), best_query_point_cpu);
 			assert(nq >= 0);
 			qq->search(nq);
 			qq->unlock();
@@ -295,7 +295,7 @@ void GpuOnlySearchStrategy::start_search_process() {
 			}
 
 			while (available_queries >= 1) {
-				long nqueries = std::min(available_queries, queries_threshold);
+				long nqueries = std::min(available_queries, best_query_point_gpu);
 				auto lb = all_label_buffers[i];
 				auto db = all_distance_buffers[i];
 
@@ -351,7 +351,7 @@ void CpuFixedSearchStrategy::cpu_process() {
 
 		if (available_queries > 0) {
 			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
-			long nqueries = std::min(available_queries, queries_threshold);
+			long nqueries = std::min(available_queries, best_query_point_cpu);
 			auto lb = all_label_buffers[0];
 			auto db = all_distance_buffers[0];
 
@@ -411,7 +411,7 @@ void CpuFixedSearchStrategy::gpu_process() {
 			}
 
 			while (available_queries >= 1) {
-				long nqueries = std::min(available_queries, queries_threshold);
+				long nqueries = std::min(available_queries, best_query_point_gpu);
 				auto lb = all_label_buffers[i];
 				auto db = all_distance_buffers[i];
 

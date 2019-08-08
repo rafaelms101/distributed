@@ -29,8 +29,6 @@ public:
 		res(_res) {
 		load_bench_data(true, best_query_point_cpu);
 		load_bench_data(false, best_query_point_gpu);
-		
-		std::printf("cpu: %ld, gpu: %ld\n", best_query_point_cpu, best_query_point_gpu);
 	}
 	
 	virtual ~SearchStrategy() {};
@@ -43,7 +41,6 @@ public:
 };
 
 class HybridSearchStrategy : public SearchStrategy {
-	constexpr static long queries_threshold = 120l;
 	QueueManager* qm;
 	
 	void gpu_process(std::mutex* cleanup_mutex);
@@ -76,8 +73,6 @@ class GpuOnlySearchStrategy : public SearchStrategy {
 	std::vector<long> proc_ids;
 	faiss::gpu::GpuIndexIVFPQ* gpu_index;
 	long buffer_start_id = 0;
-	
-	constexpr static long queries_threshold = 120l;
 	
 	void merger();
 	
