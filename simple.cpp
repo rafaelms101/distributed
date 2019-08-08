@@ -171,6 +171,8 @@ int main(int argc, char** argv) {
 		queries[i] = original_queries[i % (10000 * 128)];
 	}
 
+	std::printf("%ld\n", (end + step - begin) / step);
+	
 	for (int nq = begin; nq <= end; nq += step) {
 		int repeats = 0;
 		std::vector<double> times;
