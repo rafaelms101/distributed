@@ -14,6 +14,11 @@ protected:
 	float base_end;
 	faiss::gpu::StandardGpuResources* res;
 	
+	long best_query_point_cpu;
+	long best_query_point_gpu;
+	
+	void load_bench_data(bool cpu, long& best);
+	
 public:
 	SearchStrategy(Buffer& _query_buffer, Buffer& _distance_buffer, Buffer& _label_buffer, float _base_start, float _base_end, faiss::gpu::StandardGpuResources* _res = nullptr) : 
 		query_buffer(_query_buffer),
@@ -21,7 +26,12 @@ public:
 		label_buffer(_label_buffer),
 		base_start(_base_start),
 		base_end(_base_end),
-		res(_res) {}
+		res(_res) {
+		load_bench_data(true, best_query_point_cpu);
+		load_bench_data(false, best_query_point_gpu);
+		
+		std::printf("cpu: %ld, gpu: %ld\n", best_query_point_cpu, best_query_point_gpu);
+	}
 	
 	virtual ~SearchStrategy() {};
 	virtual void setup() = 0; //load bases and such
@@ -33,6 +43,7 @@ public:
 };
 
 class HybridSearchStrategy : public SearchStrategy {
+	constexpr static long queries_threshold = 120l;
 	QueueManager* qm;
 	
 	void gpu_process(std::mutex* cleanup_mutex);
@@ -66,6 +77,8 @@ class GpuOnlySearchStrategy : public SearchStrategy {
 	faiss::gpu::GpuIndexIVFPQ* gpu_index;
 	long buffer_start_id = 0;
 	
+	constexpr static long queries_threshold = 120l;
+	
 	void merger();
 	
 public:
@@ -86,6 +99,8 @@ class CpuFixedSearchStrategy : public SearchStrategy {
 	long buffer_start_id = 0;
 	long sent = 0;
 	std::mutex sync_mutex;
+	
+	constexpr static long queries_threshold = 120l;
 	
 	void cpu_process();
 	void gpu_process();

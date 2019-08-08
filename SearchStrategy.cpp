@@ -3,9 +3,41 @@
 #include <thread>
 #include <vector>
 #include <algorithm>
+#include <fstream>
 
 #include "QueryQueue.h"
 
+void SearchStrategy::load_bench_data(bool cpu, long& best) {
+	char file_path[100];
+	sprintf(file_path, "%s_bench", cpu ? "cpu" : "gpu");
+	std::ifstream file;
+	file.open(file_path);
+
+	if (! file.good()) {
+		std::printf("File %s_bench", cpu ? "cpu" : "gpu");
+		std::exit(-1);
+	}
+
+	int total_size;
+	file >> total_size;
+
+	best = 0;
+	double best_time_per_query = 9999999;
+	
+	for (int i = 2; i <= total_size; i++) {
+		long qty;
+		file >> qty;
+		double total_time;
+		file >> total_time;
+		
+		if (total_time / qty < best_time_per_query) {
+			best = qty;
+			best_time_per_query = total_time / qty;
+		}
+	}
+
+	file.close();
+}
 
 void SearchStrategy::merge(long num_queries, std::vector<float*>& all_distances, std::vector<faiss::Index::idx_t*>& all_labels, float* distance_array,
 		faiss::Index::idx_t* label_array) {
@@ -84,7 +116,7 @@ void HybridSearchStrategy::gpu_process(std::mutex* cleanup_mutex) {
 
 			qq->lock();
 
-			long nq = std::min(qq->size(), 120l);
+			long nq = std::min(qq->size(), queries_threshold);
 			assert(nq >= 0);
 
 			qq->search(nq);
@@ -130,7 +162,7 @@ void HybridSearchStrategy::cpu_process(std::mutex* cleanup_mutex) {
 
 			qq->lock();
 
-			long nq = std::min(qq->size(), 120l);
+			long nq = std::min(qq->size(), queries_threshold);
 			assert(nq >= 0);
 			qq->search(nq);
 			qq->unlock();
@@ -263,7 +295,7 @@ void GpuOnlySearchStrategy::start_search_process() {
 			}
 
 			while (available_queries >= 1) {
-				long nqueries = std::min(available_queries, 120l);
+				long nqueries = std::min(available_queries, queries_threshold);
 				auto lb = all_label_buffers[i];
 				auto db = all_distance_buffers[i];
 
@@ -319,7 +351,7 @@ void CpuFixedSearchStrategy::cpu_process() {
 
 		if (available_queries > 0) {
 			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
-			long nqueries = std::min(available_queries, 120l);
+			long nqueries = std::min(available_queries, queries_threshold);
 			auto lb = all_label_buffers[0];
 			auto db = all_distance_buffers[0];
 
@@ -379,7 +411,7 @@ void CpuFixedSearchStrategy::gpu_process() {
 			}
 
 			while (available_queries >= 1) {
-				long nqueries = std::min(available_queries, 120l);
+				long nqueries = std::min(available_queries, queries_threshold);
 				auto lb = all_label_buffers[i];
 				auto db = all_distance_buffers[i];
 
