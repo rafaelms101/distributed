@@ -14,7 +14,7 @@ FAISS_INCLUDE = -I $(FAISS_HOME)/.. -I $(FAISS_HOME)
 FAISS_LIB = $(FAISS_HOME)/libfaiss.a
 
 %.o: %.cpp *.h
-	$(CXX) -g $(OPT) $(CPPFLAGS) -o $@ -c $< $(FAISS_INCLUDE)
+	mpic++ -g -std=c++11  $(OPT) $(CPPFLAGS) -o $@ -c $< $(FAISS_INCLUDE)
 
 sharded: config.o utils.o readSplittedIndex.o generator.o search.o aggregator.o ExecPolicy.o Buffer.o sharded.o $(FAISS_LIB)
 	mpic++ -std=c++11 $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
