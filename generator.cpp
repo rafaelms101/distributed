@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <random>
 #include <limits>
+#include <cstring>
 
 static unsigned char* bvecs_read(const char *fname, size_t* filesize) {
 	FILE *f = fopen(fname, "rb");
