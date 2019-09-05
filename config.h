@@ -24,9 +24,10 @@ struct Config {
 	int k = 10;
 	int nprobe = 16;
 	int block_size = 5;
-	int test_length = 10000; //how many queries will be sent in total
-	int eval_length =  9000; //of the sent queries, how many will be used to compute the average response time
+	int test_length = 100000; //how many queries will be sent in total
+	int eval_length =  50000; //of the sent queries, how many will be used to compute the average response time
 	
+	long temp_memory_gpu = 1000 * 1024 * 1024;
 	int poisson_intervals = 100;
 	
 	//mode specific config
