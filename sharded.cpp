@@ -43,23 +43,28 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 		
 		cfg.query_interval = std::atof(argv[3]);
 		
-		if (! std::strcmp(argv[4], "min")) {
-			cfg.exec_policy = new MinExecPolicy(shard);
-		} else if (! std::strcmp(argv[4], "max")) {
-			cfg.exec_policy = new MaxExecPolicy(shard);
-		} else if (! std::strcmp(argv[4], "q")) {
-			cfg.exec_policy = new QueueExecPolicy(shard);
-		} else if (! std::strcmp(argv[4], "gmin")) {
-			cfg.exec_policy = new MinGreedyExecPolicy(shard);
-		} else if (! std::strcmp(argv[4], "g")) {
-			cfg.exec_policy = new GreedyExecPolicy(shard);
-		} else if (! std::strcmp(argv[4], "qmax")) {
-			cfg.exec_policy = new QueueMaxExecPolicy(shard);
-		} else if (! std::strcmp(argv[4], "c")) {
-			cfg.exec_policy = new CPUPolicy();
-		} else if (! std::strcmp(argv[4], "h")) {
-			cfg.exec_policy = new HybridPolicy(new MinGreedyExecPolicy(shard), shard);
-		} 
+		if (shard >= 0) {
+			if (! std::strcmp(argv[4], "min")) {
+				cfg.exec_policy = new MinExecPolicy(shard);
+			} else if (! std::strcmp(argv[4], "max")) {
+				cfg.exec_policy = new MaxExecPolicy(shard);
+			} else if (! std::strcmp(argv[4], "q")) {
+				cfg.exec_policy = new QueueExecPolicy(shard);
+			} else if (! std::strcmp(argv[4], "gmin")) {
+				cfg.exec_policy = new MinGreedyExecPolicy(shard);
+			} else if (! std::strcmp(argv[4], "g")) {
+				cfg.exec_policy = new GreedyExecPolicy(shard);
+			} else if (! std::strcmp(argv[4], "qmax")) {
+				cfg.exec_policy = new QueueMaxExecPolicy(shard);
+			} else if (! std::strcmp(argv[4], "c")) {
+				cfg.exec_policy = new CPUPolicy();
+			} else if (! std::strcmp(argv[4], "h")) {
+				deb("shard = %d", shard);
+				auto times = BenchExecPolicy::load_prof_times(true, shard, cfg);
+				deb("QUERIES = %d", (times.size() - 1) * cfg.block_size);
+				cfg.exec_policy = new HybridPolicy(new StaticExecPolicy(times.size() - 1), shard);
+			} 
+		}
 		
 		srand(std::atoi(argv[5]));
 	} else if (ptype == ProcType::Static) {

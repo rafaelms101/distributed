@@ -1,7 +1,7 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-constexpr int BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
+constexpr int BENCH_SIZE = 5000; //upper limit on maximum block size when in benchmark mode
 
 constexpr char SRC_PATH[] = "/home/rafael/mestrado/bigann"; //folder where the bigann database is stored
 constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are stored

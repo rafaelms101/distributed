@@ -141,7 +141,7 @@ std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, int shard_number,
 	file.open(file_path);
 
 	if (!file.good()) {
-		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d_%d doesn't exist\n", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
 		std::exit(-1);
 	}
 
