@@ -1,6 +1,6 @@
 #include "ExecPolicy.h"
 
-int BenchExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg) {
+int BenchExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	if (nrepeats >= BENCH_REPEATS) {
 		nrepeats = 0;
 		nb++;
@@ -81,7 +81,7 @@ int MinExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg
 	return std::min(buffer.entries(), pdGPU.min_block);
 }
 
-int MaxExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg) {
+int MaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 
 	int num_blocks = buffer.entries();
@@ -98,7 +98,7 @@ int MaxExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg
 	return std::min(buffer.entries(), pdGPU.max_block);
 }	
 
-int QueueExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg) {
+int QueueExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 
 	while (true) {
@@ -141,7 +141,7 @@ int QueueExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config& c
 	}
 }
 
-int QueueMaxExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg) {
+int QueueMaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 
 	while (true) {
@@ -185,10 +185,16 @@ int QueueMaxExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config
 	}
 }
 
-int MinGreedyExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg) {
+int MinGreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 	int num_blocks = buffer.entries();
 	return std::min(num_blocks, pdGPU.min_block);
+}
+
+int GreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	buffer.waitForData(1);
+	int num_blocks = buffer.entries();
+	return num_blocks;
 }
 
 

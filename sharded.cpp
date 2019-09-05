@@ -10,7 +10,7 @@
 #include "ExecPolicy.h"
 
 ProcType handle_parameters(int argc, char* argv[], int shard) {
-	std::string usage = "./sharded b | d <c|p> <query_interval> <min|max|q|gmin> <seed> | s <c|p> <query_interval> <queries_per_block> <seed>";
+	std::string usage = "./sharded b | d <c|p> <query_interval> <min|max|q|g|gmin> <seed> | s <c|p> <query_interval> <queries_per_block> <seed>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -51,7 +51,9 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 			cfg.exec_policy = new QueueExecPolicy(shard);
 		} else if (! std::strcmp(argv[4], "gmin")) {
 			cfg.exec_policy = new MinGreedyExecPolicy(shard);
-		}  else if (! std::strcmp(argv[4], "qmax")) {
+		} else if (! std::strcmp(argv[4], "g")) {
+			cfg.exec_policy = new GreedyExecPolicy(shard);
+		} else if (! std::strcmp(argv[4], "qmax")) {
 			cfg.exec_policy = new QueueMaxExecPolicy(shard);
 		} 
 		

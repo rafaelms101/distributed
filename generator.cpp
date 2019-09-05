@@ -86,8 +86,6 @@ static double poisson_constant_interval(double mean_interval) {
 		current_interval = - std::log(r) * mean_interval;
 		assert(current_interval != 0);
 		nq = 1;
-		
-		std::printf("%.8lf\n", current_interval);
 	}
 	
 	nq++;
@@ -178,11 +176,12 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 			idx++;
 		}
 		
-//		std::printf("%lf\n", total / interval_size);
+		std::printf("%lf\n", total / interval_size);
 		aggregate_total += total;
 	}
 
 	std::printf("%lf\n", aggregate_total / cfg.eval_length);
+	std::printf("%lf\n", end_time[cfg.eval_length - 1] - start_time[0]);
 }
 
 static void single_block_size_generator(int nshards, double* query_start_time, Config& cfg) {

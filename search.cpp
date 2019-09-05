@@ -178,7 +178,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	
 	while (! finished || query_buffer.entries() >= 1) {
 		int remaining_blocks = (cfg.test_length - qn) / cfg.block_size;
-		int num_blocks = cfg.exec_policy->numBlocksRequired(ptype, query_buffer, cfg);
+		int num_blocks = cfg.exec_policy->numBlocksRequired(query_buffer, cfg);
 		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, remaining_blocks);
 		query_buffer.waitForData(num_blocks);
 

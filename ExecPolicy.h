@@ -13,7 +13,7 @@ public:
 	virtual ~ExecPolicy() {}
 	
 	virtual void setup() {}
-	virtual int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg) = 0;
+	virtual int numBlocksRequired(Buffer& buffer, Config& cfg) = 0;
 };
 
 
@@ -24,7 +24,7 @@ private:
 public:
 	StaticExecPolicy(int bs) : block_size(bs) {}
 	
-	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg) { return block_size; }
+	int numBlocksRequired(Buffer& buffer, Config& cfg) { return block_size; }
 };
 
 class BenchExecPolicy : public ExecPolicy {
@@ -33,7 +33,7 @@ private:
 	int nb = 1;
 	
 public:
-	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
 };
 
 class DynamicExecPolicy : public ExecPolicy {
@@ -53,13 +53,13 @@ public:
 class MinExecPolicy : public DynamicExecPolicy {
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
 };
 
 class MaxExecPolicy : public DynamicExecPolicy {
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
 };
 
 class QueueExecPolicy : public DynamicExecPolicy {
@@ -68,7 +68,7 @@ private:
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);	
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
 };
 
 class QueueMaxExecPolicy : public DynamicExecPolicy {
@@ -77,7 +77,7 @@ private:
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);	
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
 };
 
 
@@ -85,7 +85,13 @@ public:
 class MinGreedyExecPolicy : public DynamicExecPolicy {
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	int numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg);	
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
+};
+
+class GreedyExecPolicy : public DynamicExecPolicy {
+public:
+	using DynamicExecPolicy::DynamicExecPolicy;
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
 };
 
 #endif /* EXECPOLICY_H_ */
