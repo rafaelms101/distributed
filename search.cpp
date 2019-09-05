@@ -94,11 +94,13 @@ static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
 }
 
 static void store_profile_data(std::vector<double>& procTimes, int shard_number, Config& cfg) {
-	system("mkdir -p prof"); //to make sure that the "prof" dir exists
+	char checkup_command[100];
+	sprintf(checkup_command, "mkdir -p %s", PROF_ROOT);
+	system(checkup_command); //to make sure that the "prof" dir exists
 	
 	//now we write the time data on a file
 	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+	sprintf(file_path, "%s/%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
 	std::ofstream file;
 	file.open(file_path);
 

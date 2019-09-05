@@ -54,12 +54,12 @@ float * fvecs_read (const char *fname, int *d_out, int *n_out) {
 
 std::vector<double> load_prof_times(int shard_number, Config& cfg) {
 	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+	sprintf(file_path, "%s/%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
 	std::ifstream file;
 	file.open(file_path);
 
 	if (! file.good()) {
-		std::printf("File prof/%d_%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+		std::printf("File %s/%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
 		std::exit(- 1);
 	}
 
