@@ -125,26 +125,6 @@ static void store_profile_data(std::vector<double>& procTimes, int shard_number,
 	file.close();
 }
 
-static void process_buffer(ProcType ptype, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D, std::vector<double>& procTimesGpu, Config& cfg) {
-	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
-	
-	//now we proccess our query buffer
-	if (ptype == ProcType::Bench) {
-		static bool finished = false;
-		
-		if (! finished) {
-			auto before = now();
-			gpu_index->search(nq, query_buffer, cfg.k, D, I);
-			auto time_spent = now() - before;
-
-			procTimesGpu.push_back(time_spent);
-			finished = time_spent >= 1;
-		}
-	} else gpu_index->search(nq, query_buffer, cfg.k, D, I);
-
-	buffer.consume(nq / cfg.block_size);
-}
-
 void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	std::vector<double> procTimesGpu;
 	
@@ -185,7 +165,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 		int nqueries = num_blocks * cfg.block_size;
 		
 		deb("Processing %d queries", nqueries);
-		process_buffer(ptype, gpu_index, nqueries, query_buffer, I, D, procTimesGpu, cfg); 
+		cfg.exec_policy->process_buffer(cpu_index, gpu_index, nqueries, query_buffer, I, D);
 		
 		label_buffer.transfer(I, num_blocks);
 		distance_buffer.transfer(D, num_blocks);

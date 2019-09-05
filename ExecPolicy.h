@@ -6,6 +6,7 @@
 #include "config.h"
 #include "ProfileData.h"
 #include "unistd.h"
+#include "../faiss/IndexIVFPQ.h"
 
 
 class ExecPolicy {
@@ -14,8 +15,13 @@ public:
 	
 	virtual void setup() {}
 	virtual int numBlocksRequired(Buffer& buffer, Config& cfg) = 0;
+	virtual void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
 };
 
+class CPUPolicy : public ExecPolicy {
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+};
 
 class StaticExecPolicy : public ExecPolicy {
 private:
@@ -29,11 +35,14 @@ public:
 
 class BenchExecPolicy : public ExecPolicy {
 private:
+	bool finished = false;
 	int nrepeats = 0;
 	int nb = 1;
+	std::vector<double> procTimesGpu;
 	
 public:
 	int numBlocksRequired(Buffer& buffer, Config& cfg);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
 };
 
 class DynamicExecPolicy : public ExecPolicy {

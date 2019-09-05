@@ -1,5 +1,40 @@
 #include "ExecPolicy.h"
 
+void ExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+	gpu_index->search(nq, query_buffer, cfg.k, D, I);
+	buffer.consume(nq / cfg.block_size);
+}
+
+int CPUPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	buffer.waitForData(1);
+	int num_blocks = buffer.entries();
+	return std::min(num_blocks, 200);
+}
+
+void CPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+	cpu_index->search(nq, query_buffer, cfg.k, D, I);
+	buffer.consume(nq / cfg.block_size);
+}
+
+void BenchExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+
+	//now we proccess our query buffer
+	if (!finished) {
+		auto before = now();
+		gpu_index->search(nq, query_buffer, cfg.k, D, I);
+		auto time_spent = now() - before;
+
+		procTimesGpu.push_back(time_spent);
+		finished = time_spent >= 1;
+	}
+
+
+	buffer.consume(nq / cfg.block_size);
+}
+
 int BenchExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	if (nrepeats >= BENCH_REPEATS) {
 		nrepeats = 0;
@@ -64,7 +99,7 @@ void DynamicExecPolicy::setup() {
 	assert(pdGPU.max_block <= cfg.eval_length);
 }
 
-int MinExecPolicy::numBlocksRequired(ProcType ptype, Buffer& buffer, Config& cfg) {
+int MinExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 
 	int num_blocks = buffer.entries();
