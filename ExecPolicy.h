@@ -8,22 +8,47 @@
 #include "unistd.h"
 #include "../faiss/IndexIVFPQ.h"
 
-
+//TODO: remove the need to pass explicitly the CFG
 class ExecPolicy {
 public:
 	virtual ~ExecPolicy() {}
 	
 	virtual void setup() {}
 	virtual int numBlocksRequired(Buffer& buffer, Config& cfg) = 0;
-	virtual void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	virtual void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) = 0;
+	virtual void cleanup(Config& cfg) {}
 };
 
-class CPUPolicy : public ExecPolicy {
+class CPUPolicy : public ExecPolicy {	
+public:
 	int numBlocksRequired(Buffer& buffer, Config& cfg);
 	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
 };
 
-class StaticExecPolicy : public ExecPolicy {
+class GPUPolicy : public ExecPolicy {
+public:
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+};
+
+class HybridPolicy : public ExecPolicy {
+	GPUPolicy* gpuPolice;
+	std::vector<double> timesCPU;
+	std::vector<double> timesGPU;
+	int blocks_cpu = 0;
+	int blocks_gpu = 0;
+	int shard;
+	
+	int bsearch(std::vector<double>& times, double val);
+	
+public:
+	HybridPolicy(GPUPolicy* _gpuPolice, int _shard) : gpuPolice(_gpuPolice), shard(_shard) {}
+	void setup();
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	void cleanup(Config& cfg) { gpuPolice->cleanup(cfg); }
+};
+
+class StaticExecPolicy : public GPUPolicy {
 private:
 	int block_size;
 
@@ -35,17 +60,29 @@ public:
 
 class BenchExecPolicy : public ExecPolicy {
 private:
-	bool finished = false;
+	int shard;
+	bool finished_cpu = false;
+	bool finished_gpu = false;
 	int nrepeats = 0;
 	int nb = 1;
 	std::vector<double> procTimesGpu;
+	std::vector<double> procTimesCpu;
+
+	void store_profile_data(bool gpu, Config& cfg);
 	
 public:
+	BenchExecPolicy(int _shard) : shard(_shard) {} 
 	int numBlocksRequired(Buffer& buffer, Config& cfg);
+	void cleanup(Config& cfg);
+	
 	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	static std::vector<double> load_prof_times(bool gpu, int shard_number, Config& cfg);
+	
 };
 
-class DynamicExecPolicy : public ExecPolicy {
+
+
+class DynamicExecPolicy : public GPUPolicy {
 protected:
 	ProfileData pdGPU;
 	

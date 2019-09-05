@@ -57,6 +57,8 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 			cfg.exec_policy = new QueueMaxExecPolicy(shard);
 		} else if (! std::strcmp(argv[4], "c")) {
 			cfg.exec_policy = new CPUPolicy();
+		} else if (! std::strcmp(argv[4], "h")) {
+			cfg.exec_policy = new HybridPolicy(new MinGreedyExecPolicy(shard), shard);
 		} 
 		
 		srand(std::atoi(argv[5]));
@@ -86,7 +88,7 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 		
 		srand(std::atoi(argv[5]));
 	} else if (ptype == ProcType::Bench) {
-		cfg.exec_policy = new BenchExecPolicy;
+		cfg.exec_policy = new BenchExecPolicy(shard);
 		assert(BENCH_SIZE <= cfg.eval_length);
 	}
 

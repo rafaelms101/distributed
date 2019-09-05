@@ -93,14 +93,14 @@ static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
 	return cpu_index;
 }
 
-static void store_profile_data(std::vector<double>& procTimes, int shard_number, Config& cfg) {
+static void store_profile_data(bool gpu, std::vector<double>& procTimes, int shard_number, Config& cfg) {
 	char checkup_command[100];
 	sprintf(checkup_command, "mkdir -p %s", PROF_ROOT);
 	system(checkup_command); //to make sure that the "prof" dir exists
 	
 	//now we write the time data on a file
 	char file_path[100];
-	sprintf(file_path, "%s/%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d_%d", gpu ? "gpu" : "cpu", PROF_ROOT, cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
 	std::ofstream file;
 	file.open(file_path);
 
@@ -139,7 +139,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	Buffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
 	
 	faiss::gpu::StandardGpuResources res;
-	res.setTempMemory(1500 * 1024 * 1024);
+	res.setTempMemory(1000 * 1024 * 1024);
 
 	auto cpu_index = load_index(shard, nshards, cfg);
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
@@ -178,9 +178,6 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	delete[] I;
 	delete[] D;
 	
-	if (ptype == ProcType::Bench) {
-		store_profile_data(procTimesGpu, shard, cfg);
-	}
-
+	cfg.exec_policy->cleanup(cfg);
 	deb("Finished search node");
 }

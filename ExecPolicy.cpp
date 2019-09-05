@@ -1,10 +1,8 @@
 #include "ExecPolicy.h"
 
-void ExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
-	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
-	gpu_index->search(nq, query_buffer, cfg.k, D, I);
-	buffer.consume(nq / cfg.block_size);
-}
+#include <fstream>
+#include <algorithm>
+#include <future>   
 
 int CPUPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
@@ -18,17 +16,74 @@ void CPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index,
 	buffer.consume(nq / cfg.block_size);
 }
 
+void HybridPolicy::setup() {
+	gpuPolice->setup();
+	timesCPU = BenchExecPolicy::load_prof_times(false, shard, cfg);
+	timesGPU = BenchExecPolicy::load_prof_times(true, shard, cfg);
+}
+
+int HybridPolicy::bsearch(std::vector<double>& times, double val) {
+	int begin = 0;
+	int end = times.size() - 1;
+	
+	while (begin < end - 1) {
+		int mid = (end + begin) / 2;
+		
+		if (times[mid] > val) {
+			end = mid - 1;
+		} else {
+			begin = mid;
+		}
+	}
+	
+	if (times[end] <= val) return end;
+	else return begin;
+}
+
+int HybridPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	blocks_gpu = gpuPolice->numBlocksRequired(buffer, cfg);
+	auto expected_time = timesGPU[blocks_gpu];
+	blocks_cpu = bsearch(timesCPU, expected_time);
+	
+	return blocks_gpu + blocks_cpu;
+}
+
+static bool gpu_search(faiss::Index* gpu_index, int nq_gpu, float* query_buffer, faiss::Index::idx_t* I, float* D) {
+	if (nq_gpu > 0) gpu_index->search(nq_gpu, query_buffer, cfg.k, D, I);
+	return true;
+}
+
+void HybridPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	auto nq_cpu = blocks_cpu * cfg.block_size;
+	auto nq_gpu = nq - nq_cpu;
+	
+	deb("gpu=%d, cpu=%d", nq_gpu, nq_cpu);
+	
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+	std::future<bool> fut = std::async(std::launch::async, gpu_search, gpu_index, nq_gpu, query_buffer, I, D);
+	if (nq_cpu > 0) cpu_index->search(nq_cpu, query_buffer + nq_gpu * cfg.d, cfg.k, D + nq_gpu * cfg.k, I + nq_gpu * cfg.k);
+	bool ret = fut.get();
+	buffer.consume(nq / cfg.block_size);
+}
+
 void BenchExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 
 	//now we proccess our query buffer
-	if (!finished) {
+	if (! finished_gpu) {
 		auto before = now();
 		gpu_index->search(nq, query_buffer, cfg.k, D, I);
 		auto time_spent = now() - before;
-
 		procTimesGpu.push_back(time_spent);
-		finished = time_spent >= 1;
+		finished_gpu = time_spent >= 1;
+	}
+	
+	if (! finished_cpu) {
+		auto before = now();
+		cpu_index->search(nq, query_buffer, cfg.k, D, I);
+		auto time_spent = now() - before;
+		procTimesCpu.push_back(time_spent);
+		finished_cpu = time_spent >= 1;
 	}
 
 
@@ -43,6 +98,78 @@ int BenchExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 
 	nrepeats++;
 	return nb;
+}
+
+void BenchExecPolicy::store_profile_data(bool gpu, Config& cfg) {
+	char checkup_command[100];
+	sprintf(checkup_command, "mkdir -p %s", PROF_ROOT);
+	system(checkup_command); //to make sure that the "prof" dir exists
+
+	//now we write the time data on a file
+	char file_path[100];
+	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard);
+	std::ofstream file;
+	file.open(file_path);
+
+	std::vector<double>& procTimes = gpu ? procTimesGpu : procTimesCpu;
+	
+	int blocks = procTimes.size() / BENCH_REPEATS;
+	file << blocks << std::endl;
+
+	int ptr = 0;
+
+	for (int b = 1; b <= blocks; b++) {
+		std::vector<double> times;
+
+		for (int repeats = 1; repeats <= BENCH_REPEATS; repeats++) {
+			times.push_back(procTimes[ptr++]);
+		}
+
+		std::sort(times.begin(), times.end());
+
+		int mid = BENCH_REPEATS / 2;
+		file << times[mid] << std::endl;
+	}
+
+	file.close();
+}
+
+std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, int shard_number, Config& cfg) {
+	char file_path[100];
+	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+	std::ifstream file;
+	file.open(file_path);
+
+	if (!file.good()) {
+		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+		std::exit(-1);
+	}
+
+	int total_size;
+	file >> total_size;
+
+	std::vector<double> times(total_size + 1);
+
+	times[0] = 0;
+
+	for (int i = 1; i <= total_size; i++) {
+		file >> times[i];
+	}
+
+	file.close();
+
+	return times;
+}
+
+void BenchExecPolicy::cleanup(Config& cfg) {
+	store_profile_data(true, cfg);
+	store_profile_data(false, cfg);
+}
+
+void GPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+	gpu_index->search(nq, query_buffer, cfg.k, D, I);
+	buffer.consume(nq / cfg.block_size);
 }
 
 std::pair<int, int> DynamicExecPolicy::longest_contiguous_region(double min, double tolerance, std::vector<double>& time_per_block) {
@@ -71,7 +198,7 @@ std::pair<int, int> DynamicExecPolicy::longest_contiguous_region(double min, dou
 }
 
 void DynamicExecPolicy::setup() {
-	std::vector<double> times(load_prof_times(shard, cfg));
+	std::vector<double> times(BenchExecPolicy::load_prof_times(true, shard, cfg));
 	std::vector<double> time_per_block(times.size());
 
 	for (int i = 1; i < times.size(); i++) {
