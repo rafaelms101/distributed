@@ -42,6 +42,10 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 		}
 		
 		cfg.query_interval = std::atof(argv[3]);
+		cfg.eval_length = int(cfg.test_duration / 2 / cfg.query_interval);
+		cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
+		cfg.test_length = cfg.eval_length * 2;
+		deb("test length: %d", cfg.test_length);
 		
 		if (shard >= 0) {
 			if (! std::strcmp(argv[4], "min")) {
@@ -59,10 +63,7 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 			} else if (! std::strcmp(argv[4], "c")) {
 				cfg.exec_policy = new CPUPolicy();
 			} else if (! std::strcmp(argv[4], "h")) {
-				deb("shard = %d", shard);
-				auto times = BenchExecPolicy::load_prof_times(true, shard, cfg);
-				deb("QUERIES = %d", (times.size() - 1) * cfg.block_size);
-				cfg.exec_policy = new HybridPolicy(new StaticExecPolicy(times.size() - 1), shard);
+				cfg.exec_policy = new HybridPolicy(new MinGreedyExecPolicy(shard), shard);
 			} 
 		}
 		
@@ -83,6 +84,10 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 		}
 
 		cfg.query_interval = std::atof(argv[3]);
+		cfg.eval_length = int(cfg.test_duration / 2 / cfg.query_interval);
+		cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
+		cfg.test_length = cfg.eval_length * 2;
+		deb("test length: %d", cfg.test_length);
 		
 		int nq = atoi(argv[4]); 
 		assert(nq <= cfg.eval_length);
