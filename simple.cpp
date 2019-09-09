@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
 		int repeats = 0;
 		std::vector<double> times;
 
-		while (repeats <= 10) {
+		while (repeats <= 3) {
 			double before = elapsed();
 			index->search(nq, queries, cfg.k, D, I);
 			double after = elapsed();
@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
 		if (times.size() % 2 == 0) {
 			int right = times.size() / 2;
 			int left = right - 1;
-			median = times[left] + times[right] / 2;
+			median = (times[left] + times[right]) / 2;
 		} else {
 			int mid = times.size() / 2;
 			median = times[mid];
