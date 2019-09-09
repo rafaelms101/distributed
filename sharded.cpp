@@ -42,10 +42,17 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 		}
 		
 		cfg.query_interval = std::atof(argv[3]);
-		cfg.eval_length = int(cfg.test_duration / 2 / cfg.query_interval);
-		cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
-		cfg.test_length = cfg.eval_length * 2;
-		deb("test length: %d", cfg.test_length);
+		
+		if (cfg.query_interval == 0) {
+			cfg.eval_length = 5000;
+			cfg.test_length = 10000;
+		} else {
+			cfg.eval_length = int(cfg.test_duration / 2 / cfg.query_interval);
+			cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
+			cfg.test_length = cfg.eval_length * 2;
+			deb("test length: %d", cfg.test_length);
+		}
+		
 		
 		if (shard >= 0) {
 			if (! std::strcmp(argv[4], "min")) {
@@ -84,10 +91,17 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 		}
 
 		cfg.query_interval = std::atof(argv[3]);
-		cfg.eval_length = int(cfg.test_duration / 2 / cfg.query_interval);
-		cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
-		cfg.test_length = cfg.eval_length * 2;
-		deb("test length: %d", cfg.test_length);
+		
+		//TODO: refactor this, since it's duplicated code
+		if (cfg.query_interval == 0) {
+			cfg.eval_length = 5000;
+			cfg.test_length = 10000;
+		} else {
+			cfg.eval_length = int(cfg.test_duration / 2 / cfg.query_interval);
+			cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
+			cfg.test_length = cfg.eval_length * 2;
+			deb("test length: %d", cfg.test_length);
+		}
 		
 		int nq = atoi(argv[4]); 
 		assert(nq <= cfg.eval_length);
@@ -99,7 +113,7 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 		srand(std::atoi(argv[5]));
 	} else if (ptype == ProcType::Bench) {
 		cfg.exec_policy = new BenchExecPolicy(shard);
-		assert(BENCH_SIZE <= cfg.eval_length);
+		cfg.test_length = cfg.eval_length = BENCH_SIZE * BENCH_REPEATS;
 	}
 
 	return ptype;
