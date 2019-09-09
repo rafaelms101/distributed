@@ -4,13 +4,13 @@
 #include <algorithm>
 #include <future>   
 
-int CPUPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 	int num_blocks = buffer.entries();
-	return std::min(num_blocks, 200);
+	return num_blocks;
 }
 
-void CPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+void CPUGreedyPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	cpu_index->search(nq, query_buffer, cfg.k, D, I);
 	buffer.consume(nq / cfg.block_size);
@@ -59,6 +59,25 @@ void HybridPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_ind
 	
 	deb("gpu=%d, cpu=%d", nq_gpu, nq_cpu);
 	
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+	std::future<bool> fut = std::async(std::launch::async, gpu_search, gpu_index, nq_gpu, query_buffer, I, D);
+	if (nq_cpu > 0) cpu_index->search(nq_cpu, query_buffer + nq_gpu * cfg.d, cfg.k, D + nq_gpu * cfg.k, I + nq_gpu * cfg.k);
+	bool ret = fut.get();
+	buffer.consume(nq / cfg.block_size);
+}
+
+
+int HybridBatch::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	buffer.waitForData(1);
+	int num_blocks = buffer.entries();
+	return num_blocks;
+}
+void HybridBatch::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	auto nq_gpu = int(nq * gpuSpeedup / (1 + gpuSpeedup));
+	auto nq_cpu = nq - nq_gpu;
+	
+	deb("gpu=%d, cpu=%d", nq_gpu, nq_cpu);
+
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	std::future<bool> fut = std::async(std::launch::async, gpu_search, gpu_index, nq_gpu, query_buffer, I, D);
 	if (nq_cpu > 0) cpu_index->search(nq_cpu, query_buffer + nq_gpu * cfg.d, cfg.k, D + nq_gpu * cfg.k, I + nq_gpu * cfg.k);

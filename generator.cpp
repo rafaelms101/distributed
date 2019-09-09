@@ -251,6 +251,10 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 				query_start = query_start_time(poisson_constant_interval, cfg.query_interval, cfg);
 				break;
 			}
+			case RequestDistribution::Batch: {
+				query_start = query_start_time(constant_interval, 0, cfg);
+				break;
+			}
 		}
 	}
 	

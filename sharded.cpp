@@ -34,24 +34,31 @@ static void fill_test_length() {
 }
 
 static void process_query_distribution(char* type) {
-	if (!std::strcmp(type, "c")) {
+	if (! std::strcmp(type, "c")) {
 		cfg.request_distribution = RequestDistribution::Constant;
 
-		if (cfg.query_interval == 0) cfg.test_length = 10000;
-		else cfg.test_length = int(cfg.test_duration / cfg.query_interval);
+		assert(cfg.query_interval > 0);
 		
+		cfg.test_length = int(cfg.test_duration / cfg.query_interval);
 		cfg.eval_length = cfg.test_length / 2;
-	} else if (!std::strcmp(type, "p")) {
+	} else if (! std::strcmp(type, "p")) {
 		cfg.request_distribution = RequestDistribution::Variable_Poisson;
 		fill_poisson_rates();
 		fill_test_length();
+	} else if (! std::strcmp(type, "b")) {
+		cfg.request_distribution = RequestDistribution::Batch;
+		assert(cfg.query_interval == 0);
+		cfg.test_length = 10000;
+		cfg.eval_length = 10000;
+		cfg.block_size = 10000;
 	} else {
 		std::printf("Wrong query distribution. Use 'p' or 'c'\n");
 		std::exit(-1);
 	}
 	
-	cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
-	cfg.test_length = 2 * cfg.eval_length;
+	cfg.test_length = cfg.test_length - cfg.test_length % cfg.block_size;
+	cfg.eval_length = std::min(cfg.test_length, cfg.eval_length);
+	
 	
 	deb("test_length: %d", cfg.test_length);
 }
@@ -92,13 +99,13 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 			} else if (! std::strcmp(argv[4], "gmin")) {
 				cfg.exec_policy = new MinGreedyExecPolicy(shard);
 			} else if (! std::strcmp(argv[4], "g")) {
-				cfg.exec_policy = new GreedyExecPolicy(shard);
+				cfg.exec_policy = new GreedyExecPolicy();
 			} else if (! std::strcmp(argv[4], "qmax")) {
 				cfg.exec_policy = new QueueMaxExecPolicy(shard);
 			} else if (! std::strcmp(argv[4], "c")) {
-				cfg.exec_policy = new CPUPolicy();
+				cfg.exec_policy = new CPUGreedyPolicy();
 			} else if (! std::strcmp(argv[4], "h")) {
-				cfg.exec_policy = new HybridPolicy(new MinGreedyExecPolicy(shard), shard);
+				cfg.exec_policy = new HybridBatch(3.3);
 			} 
 		}
 		
@@ -109,19 +116,11 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 			std::exit(-1);
 		}
 
-		if (! std::strcmp(argv[2], "c")) {
-			cfg.request_distribution = RequestDistribution::Constant;
-		} else if (! std::strcmp(argv[2], "p")) {
-			cfg.request_distribution = RequestDistribution::Variable_Poisson;
-		} else {
-			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			std::exit(- 1);
-		}
-
 		cfg.query_interval = std::atof(argv[3]);
 		process_query_distribution(argv[2]);
 	
 		int nq = atoi(argv[4]); 
+		deb("%d <= %d", nq, cfg.eval_length);
 		assert(nq <= cfg.eval_length);
 		assert(nq % cfg.block_size == 0);
 		cfg.processing_size = nq / cfg.block_size;
