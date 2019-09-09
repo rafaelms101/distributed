@@ -68,28 +68,18 @@ static double constant_interval(double val) {
 	return val;
 }
 
-static double poisson_interval(double mean_interval) {
-	double r = 0;
-	
-	while (r == 0) r = static_cast<double>(rand()) / RAND_MAX;
-	return -std::log(r) * mean_interval;
-}
-
 static double poisson_constant_interval(double mean_interval) {
-	static double interval_duration = cfg.test_duration / cfg.poisson_intervals;
-	static double current_time = interval_duration + 1;
-	static double current_interval;
+	static int index = 0;
+	static double time = 0;
+	static double interval_length = cfg.test_duration / cfg.poisson_intervals.size();
 	
-	if (current_time > interval_duration) {
-		double r = 0;
-		while (r == 0 || r == 1) r = static_cast<double>(rand()) / RAND_MAX;
-		current_interval = - std::log(r) * mean_interval;
-		assert(current_interval != 0);
-		current_time = 0;
+	if (time >= interval_length) {
+		index++;
+		time -= interval_length;
 	}
 	
-	current_time += current_interval;
-	return current_interval;
+	time += cfg.poisson_intervals[index];
+	return cfg.poisson_intervals[index];
 }
 
 static double fast_slow_fast_interval(int eval_length) {
@@ -165,23 +155,23 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 	double aggregate_total = 0;
 	double total = 0;
+	
+	double interval_duration = (start_time[cfg.eval_length - 1] - start_time[0]) * 2 / cfg.poisson_intervals.size();
+	double interval_boundary = start_time[0] + interval_duration;
 	int nq = 0;
 	
-	double interval_duration = cfg.test_duration / cfg.poisson_intervals;
-	double time_target = interval_duration;
-	
 	for (int q = 0; q < cfg.eval_length; q++) {
-		if (start_time[q] >= time_target && cfg.request_distribution == RequestDistribution::Variable_Poisson) {
+		if (cfg.request_distribution == RequestDistribution::Variable_Poisson && start_time[q] >= interval_boundary) {
 			std::printf("%lf\n", total / nq);
-			time_target += interval_duration;
+			interval_boundary += interval_duration;
 			total = 0;
 			nq = 0;
 		}
 		
+		nq++;
 		auto response_time = end_time[q] - start_time[q];
 		total += response_time;
 		aggregate_total += response_time;
-		nq++;
 	}
 
 	std::printf("%lf\n", aggregate_total / cfg.eval_length);
@@ -243,7 +233,7 @@ static double* query_start_time(double (*next_interval)(double), double param, C
 		query_start[i] = time;
 		time += next_interval(param);
 	}
-	
+
 	return query_start;
 }
 

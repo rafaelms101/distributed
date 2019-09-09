@@ -1,6 +1,8 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
+#include <vector>
+
 constexpr int BENCH_SIZE = 5000; //upper limit on maximum block size when in benchmark mode
 
 constexpr char SRC_PATH[] = "/home/rafael/mestrado/bigann"; //folder where the bigann database is stored
@@ -24,14 +26,14 @@ struct Config {
 	int k = 10;
 	int nprobe = 16;
 	int block_size = 5;
-	double test_duration = 120; //2min
+	double test_duration = 8;
 	
 	// filled elsewhere
 	int test_length; //how many queries will be sent in total
 	int eval_length; //of the sent queries, how many will be used to compute the average response time
 	
-	long temp_memory_gpu = 1000 * 1024 * 1024;
-	int poisson_intervals = 1000;
+	long temp_memory_gpu = 800 * 1024 * 1024;
+	std::vector<double> poisson_intervals = std::vector<double>(100);
 	
 	
 	//mode specific config

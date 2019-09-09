@@ -9,7 +9,54 @@
 #include "config.h"
 #include "ExecPolicy.h"
 
-ProcType handle_parameters(int argc, char* argv[], int shard) {
+static void fill_poisson_rates() {
+	for (int i = 0; i < cfg.poisson_intervals.size(); i++) {
+		cfg.poisson_intervals[i] = poisson_interval(cfg.query_interval);
+	}
+}
+
+static void fill_test_length() {
+	double interval_length = cfg.test_duration / cfg.poisson_intervals.size();
+	cfg.test_length = 0;
+	
+	double time = 0;
+	
+	for (double interval : cfg.poisson_intervals) {
+		while (time < interval_length) {
+			cfg.test_length++;
+			time += interval;
+		}
+		
+		time = time - interval_length;
+	}
+	
+	cfg.eval_length = cfg.test_length / 2;
+}
+
+static void process_query_distribution(char* type) {
+	if (!std::strcmp(type, "c")) {
+		cfg.request_distribution = RequestDistribution::Constant;
+
+		if (cfg.query_interval == 0) cfg.test_length = 10000;
+		else cfg.test_length = int(cfg.test_duration / cfg.query_interval);
+		
+		cfg.eval_length = cfg.test_length / 2;
+	} else if (!std::strcmp(type, "p")) {
+		cfg.request_distribution = RequestDistribution::Variable_Poisson;
+		fill_poisson_rates();
+		fill_test_length();
+	} else {
+		std::printf("Wrong query distribution. Use 'p' or 'c'\n");
+		std::exit(-1);
+	}
+	
+	cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
+	cfg.test_length = 2 * cfg.eval_length;
+	
+	deb("test_length: %d", cfg.test_length);
+}
+
+static ProcType handle_parameters(int argc, char* argv[], int shard) {
 	std::string usage = "./sharded b | d <c|p> <query_interval> <min|max|q|g|gmin|c> <seed> | s <c|p> <query_interval> <queries_per_block> <seed>";
 
 	if (argc < 2) {
@@ -32,27 +79,8 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 			std::exit(-1);
 		}
 
-		if (! std::strcmp(argv[2], "c")) {
-			cfg.request_distribution = RequestDistribution::Constant;
-		} else if (! std::strcmp(argv[2], "p")) {
-			cfg.request_distribution = RequestDistribution::Variable_Poisson;
-		} else {
-			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			std::exit(-1);
-		}
-		
 		cfg.query_interval = std::atof(argv[3]);
-		
-		if (cfg.query_interval == 0) {
-			cfg.eval_length = 5000;
-			cfg.test_length = 10000;
-		} else {
-			cfg.eval_length = int(cfg.test_duration / 2 / cfg.query_interval);
-			cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
-			cfg.test_length = cfg.eval_length * 2;
-			deb("test length: %d", cfg.test_length);
-		}
-		
+		process_query_distribution(argv[2]);
 		
 		if (shard >= 0) {
 			if (! std::strcmp(argv[4], "min")) {
@@ -91,18 +119,8 @@ ProcType handle_parameters(int argc, char* argv[], int shard) {
 		}
 
 		cfg.query_interval = std::atof(argv[3]);
-		
-		//TODO: refactor this, since it's duplicated code
-		if (cfg.query_interval == 0) {
-			cfg.eval_length = 5000;
-			cfg.test_length = 10000;
-		} else {
-			cfg.eval_length = int(cfg.test_duration / 2 / cfg.query_interval);
-			cfg.eval_length = cfg.eval_length - cfg.eval_length % cfg.block_size;
-			cfg.test_length = cfg.eval_length * 2;
-			deb("test length: %d", cfg.test_length);
-		}
-		
+		process_query_distribution(argv[2]);
+	
 		int nq = atoi(argv[4]); 
 		assert(nq <= cfg.eval_length);
 		assert(nq % cfg.block_size == 0);

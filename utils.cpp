@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <cstring>
 #include <fstream>
+#include <random>
 
 #include "config.h"
 
@@ -50,4 +51,11 @@ float * fvecs_read (const char *fname, int *d_out, int *n_out) {
 
     fclose(f);
     return x;
+}
+
+double poisson_interval(double mean_interval) {
+	double r = 0;
+	
+	while (r == 0) r = static_cast<double>(rand()) / RAND_MAX;
+	return -std::log(r) * mean_interval;
 }
