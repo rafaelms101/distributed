@@ -25,10 +25,13 @@ train: train.o $(FAISS_LIB)
 simple: readSplittedIndex.o simple.o $(FAISS_LIB)
 	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
+simple_hybrid: readSplittedIndex.o simple_hybrid.o $(FAISS_LIB)
+		$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
+
 recall: recall.o $(FAISS_LIB)
 		$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 clean:
-	rm -f *.o sharded train simple recall
+	rm -f *.o sharded train simple recall simple_hybrid
 
 .PHONY: clean
