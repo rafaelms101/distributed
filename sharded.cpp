@@ -29,8 +29,6 @@ static void fill_test_length() {
 		
 		time = time - interval_length;
 	}
-	
-	cfg.eval_length = cfg.test_length / 2;
 }
 
 static void process_query_distribution(char* type) {
@@ -40,7 +38,6 @@ static void process_query_distribution(char* type) {
 		assert(cfg.query_interval > 0);
 		
 		cfg.test_length = int(cfg.test_duration / cfg.query_interval);
-		cfg.eval_length = cfg.test_length / 2;
 	} else if (! std::strcmp(type, "p")) {
 		cfg.request_distribution = RequestDistribution::Variable_Poisson;
 		fill_poisson_rates();
@@ -49,15 +46,15 @@ static void process_query_distribution(char* type) {
 		cfg.request_distribution = RequestDistribution::Batch;
 		assert(cfg.query_interval == 0);
 		cfg.test_length = 10000;
-		cfg.eval_length = 10000;
 	} else {
 		std::printf("Wrong query distribution. Use 'p' or 'c'\n");
 		std::exit(-1);
 	}
 	
 	cfg.test_length = cfg.test_length - cfg.test_length % cfg.block_size;
-	cfg.eval_length = std::min(cfg.test_length, cfg.eval_length);
+	cfg.eval_length = cfg.test_length;
 	
+//	std::printf("test length: %d\n", cfg.test_length);
 	
 	deb("test_length: %d", cfg.test_length);
 }

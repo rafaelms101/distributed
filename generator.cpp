@@ -153,28 +153,34 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 }
 
 static void compute_stats(double* start_time, double* end_time, Config& cfg) {
-	double aggregate_total = 0;
 	double total = 0;
+	double interval_duration = (start_time[cfg.eval_length - 1] - start_time[0]) / cfg.poisson_intervals.size();
 	
-	double interval_duration = (start_time[cfg.eval_length - 1] - start_time[0]) * 2 / cfg.poisson_intervals.size();
-	double interval_boundary = start_time[0] + interval_duration;
-	int nq = 0;
+	std::vector<double> intervals(cfg.poisson_intervals.size(), 0);
+	std::vector<int> qty(cfg.poisson_intervals.size(), 0);
 	
 	for (int q = 0; q < cfg.eval_length; q++) {
-		if (cfg.request_distribution == RequestDistribution::Variable_Poisson && start_time[q] >= interval_boundary) {
-			std::printf("%lf\n", total / nq);
-			interval_boundary += interval_duration;
-			total = 0;
-			nq = 0;
-		}
-		
-		nq++;
 		auto response_time = end_time[q] - start_time[q];
 		total += response_time;
-		aggregate_total += response_time;
+		
+		if (cfg.request_distribution == RequestDistribution::Variable_Poisson) {
+			int interval = int((start_time[q] - start_time[0]) / interval_duration);
+			
+			if (interval == intervals.size()) interval--;
+			
+			assert(interval < cfg.poisson_intervals.size());
+			qty[interval] += 1;
+			intervals[interval] += response_time;
+		}
 	}
 
-	std::printf("%lf\n", aggregate_total / cfg.eval_length);
+	if (cfg.request_distribution == RequestDistribution::Variable_Poisson) {
+		for (int i = 0; i < intervals.size(); i++) {
+			std::printf("%lf\n", intervals[i] / qty[i]);
+		}
+	}
+	
+	std::printf("%lf\n", total / cfg.eval_length);
 	std::printf("%lf\n", end_time[cfg.eval_length - 1] - start_time[0]);
 }
 
