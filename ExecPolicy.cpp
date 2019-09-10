@@ -68,10 +68,9 @@ void HybridPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_ind
 
 
 int HybridBatch::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
-	int num_blocks = buffer.entries();
-	return num_blocks;
+	return cfg.test_length / cfg.block_size;
 }
+
 void HybridBatch::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	auto nq_gpu = int(nq * gpuSpeedup / (1 + gpuSpeedup));
 	auto nq_cpu = nq - nq_gpu;

@@ -50,7 +50,6 @@ static void process_query_distribution(char* type) {
 		assert(cfg.query_interval == 0);
 		cfg.test_length = 10000;
 		cfg.eval_length = 10000;
-		cfg.block_size = 10000;
 	} else {
 		std::printf("Wrong query distribution. Use 'p' or 'c'\n");
 		std::exit(-1);
