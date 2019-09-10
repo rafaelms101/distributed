@@ -109,22 +109,22 @@ static double fast_slow_fast_interval(int eval_length) {
 	return curr_time;
 }
 
-static int next_query(const int test_length, const double begin, double* start_query_time, Config& cfg) {
-	static int qty = 0;
+static int next_query(const int test_length, double* start_query_time, Config& cfg) {
+	static int qn = 0;
 	
 	double time_now = now();
 	
-	if (qty >= test_length) return -2;
+	if (qn >= test_length) return -2;
 	
-	if (time_now < begin + start_query_time[qty]) return -1;
+	if (time_now < start_query_time[qn]) return -1;
 	
-	qty++;
+	qn++;
 	
-	if (qty % 10000 == 0 || (qty % 1000 == 0 && qty <= 10000)) {
-		deb("Sent %d/%d queries", qty, test_length);
+	if (qn % 10000 == 0 || (qn % 1000 == 0 && qn <= 10000)) {
+		deb("Sent %d/%d queries", qn, test_length);
 	}
 	
-	return (qty - 1) % cfg.nq; 
+	return (qn - 1) % cfg.nq; 
 }
 
 static void send_finished_signal(int nshards) {
@@ -186,10 +186,14 @@ static void single_block_size_generator(int nshards, double* query_start_time, C
 	float* to_be_deleted = query_buffer;
 	int queries_in_buffer = 0;
 	int qn = 0;
-	const double begin_time = now();
+	double begin_time = now();
+	
+	for (int i = 0; i < cfg.test_length; i++) {
+		query_start_time[i] += begin_time;
+	}
 	
 	while (true) {
-		auto id = next_query(cfg.test_length, begin_time, query_start_time, cfg);
+		auto id = next_query(cfg.test_length, query_start_time, cfg);
 
 		if (id == -1) continue;
 			
@@ -215,10 +219,6 @@ static void single_block_size_generator(int nshards, double* query_start_time, C
 	double end_time[cfg.eval_length];
 	MPI_Recv(end_time, cfg.eval_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-	for (int i = 0; i < cfg.test_length; i++) {
-		query_start_time[i] = begin_time + query_start_time[i];
-	}
-	
 	compute_stats(&query_start_time[cfg.test_length - cfg.eval_length], end_time, cfg);
 	
 	delete [] to_be_deleted;
