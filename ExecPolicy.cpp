@@ -7,7 +7,7 @@
 int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 	int num_blocks = buffer.entries();
-	return num_blocks;
+	return std::min(num_blocks, 200);
 }
 
 void CPUGreedyPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
@@ -374,7 +374,7 @@ int MinGreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 int GreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 	int num_blocks = buffer.entries();
-	return num_blocks;
+	return std::min(num_blocks, 200);
 }
 
 

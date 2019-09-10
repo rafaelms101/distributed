@@ -26,7 +26,7 @@ struct Config {
 	int k = 10;
 	int nprobe = 16;
 	int block_size = 5;
-	double test_duration = 8;
+	double test_duration = 2;
 	
 	// filled elsewhere
 	int test_length; //how many queries will be sent in total
