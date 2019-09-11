@@ -7,6 +7,7 @@
 #include <random>
 #include <limits>
 #include <cstring>
+#include "ExecPolicy.h"
 
 static unsigned char* bvecs_read(const char *fname, size_t* filesize) {
 	FILE *f = fopen(fname, "rb");
@@ -69,17 +70,17 @@ static double constant_interval(double val) {
 }
 
 static double poisson_constant_interval(double mean_interval) {
-	static int index = 0;
-	static double time = 0;
-	static double interval_length = cfg.test_duration / cfg.poisson_intervals.size();
+	static int block_size = cfg.test_length / cfg.poisson_intervals;
+	static int nq = block_size;
+	static double current_interval = 0;
 	
-	if (time >= interval_length) {
-		index++;
-		time -= interval_length;
+	if (nq == block_size) {
+		nq = 0;
+		current_interval = poisson_interval(mean_interval);
 	}
 	
-	time += cfg.poisson_intervals[index];
-	return cfg.poisson_intervals[index];
+	nq++;
+	return current_interval;
 }
 
 static double fast_slow_fast_interval(int eval_length) {
@@ -154,29 +155,21 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 
 static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 	double total = 0;
-	double interval_duration = (start_time[cfg.eval_length - 1] - start_time[0]) / cfg.poisson_intervals.size();
-	
-	std::vector<double> intervals(cfg.poisson_intervals.size(), 0);
-	std::vector<int> qty(cfg.poisson_intervals.size(), 0);
+	double block_total = 0;
+	int nq_block = 0;
+	int block_size = cfg.test_length / cfg.poisson_intervals;
 	
 	for (int q = 0; q < cfg.eval_length; q++) {
 		auto response_time = end_time[q] - start_time[q];
 		total += response_time;
+		block_total += response_time;
+		nq_block++;
 		
-		if (cfg.request_distribution == RequestDistribution::Variable_Poisson) {
-			int interval = int((start_time[q] - start_time[0]) / interval_duration);
-			
-			if (interval == intervals.size()) interval--;
-			
-			assert(interval < cfg.poisson_intervals.size());
-			qty[interval] += 1;
-			intervals[interval] += response_time;
-		}
-	}
-
-	if (cfg.request_distribution == RequestDistribution::Variable_Poisson) {
-		for (int i = 0; i < intervals.size(); i++) {
-			std::printf("%lf\n", intervals[i] / qty[i]);
+		if (cfg.request_distribution == RequestDistribution::Variable_Poisson
+				&& nq_block == block_size) {
+			std::printf("%lf\n", block_total / nq_block);
+			block_total = 0;
+			nq_block = 0;
 		}
 	}
 	
@@ -248,13 +241,16 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 	double* query_start;
 	
 	if (ptype != ProcType::Bench) {
+		auto times = BenchExecPolicy::load_prof_times(true, 0, cfg);
+		double query_interval = cfg.query_load * times[times.size() - 1] / (times.size() - 1) / cfg.block_size;
+		
 		switch (cfg.request_distribution) {
 			case RequestDistribution::Constant: {
-				query_start = query_start_time(constant_interval, cfg.query_interval, cfg);
+				query_start = query_start_time(constant_interval, query_interval, cfg);
 				break;
 			}
 			case RequestDistribution::Variable_Poisson: {
-				query_start = query_start_time(poisson_constant_interval, cfg.query_interval, cfg);
+				query_start = query_start_time(poisson_constant_interval, query_interval, cfg);
 				break;
 			}
 			case RequestDistribution::Batch: {

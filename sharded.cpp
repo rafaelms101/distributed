@@ -9,54 +9,24 @@
 #include "config.h"
 #include "ExecPolicy.h"
 
-static void fill_poisson_rates() {
-	for (int i = 0; i < cfg.poisson_intervals.size(); i++) {
-		cfg.poisson_intervals[i] = poisson_interval(cfg.query_interval);
-	}
-}
-
-static void fill_test_length() {
-	double interval_length = cfg.test_duration / cfg.poisson_intervals.size();
-	cfg.test_length = 0;
+static void process_query_distribution(char** argv) {
+	assert(cfg.test_length % cfg.block_size == 0);
 	
-	double time = 0;
+	cfg.query_load = std::atof(argv[1]);
 	
-	for (double interval : cfg.poisson_intervals) {
-		while (time < interval_length) {
-			cfg.test_length++;
-			time += interval;
-		}
-		
-		time = time - interval_length;
-	}
-}
-
-static void process_query_distribution(char* type) {
-	if (! std::strcmp(type, "c")) {
+	assert(cfg.query_load <= 1);
+	
+	if (! std::strcmp(argv[0], "c")) {
 		cfg.request_distribution = RequestDistribution::Constant;
-
-		assert(cfg.query_interval > 0);
-		
-		cfg.test_length = int(cfg.test_duration / cfg.query_interval);
-	} else if (! std::strcmp(type, "p")) {
+	} else if (! std::strcmp(argv[0], "p")) {
 		cfg.request_distribution = RequestDistribution::Variable_Poisson;
-		fill_poisson_rates();
-		fill_test_length();
-	} else if (! std::strcmp(type, "b")) {
+	} else if (! std::strcmp(argv[0], "b")) {
 		cfg.request_distribution = RequestDistribution::Batch;
-		assert(cfg.query_interval == 0);
-		cfg.test_length = 10000;
+		assert(cfg.query_load == 0);
 	} else {
 		std::printf("Wrong query distribution. Use 'p' or 'c'\n");
 		std::exit(-1);
 	}
-	
-	cfg.test_length = cfg.test_length - cfg.test_length % cfg.block_size;
-	cfg.eval_length = cfg.test_length;
-	
-//	std::printf("test length: %d\n", cfg.test_length);
-	
-	deb("test_length: %d", cfg.test_length);
 }
 
 static ProcType handle_parameters(int argc, char* argv[], int shard) {
@@ -82,8 +52,7 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 			std::exit(-1);
 		}
 
-		cfg.query_interval = std::atof(argv[3]);
-		process_query_distribution(argv[2]);
+		process_query_distribution(&argv[2]);
 		
 		if (shard >= 0) {
 			if (! std::strcmp(argv[4], "min")) {
@@ -112,8 +81,7 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 			std::exit(-1);
 		}
 
-		cfg.query_interval = std::atof(argv[3]);
-		process_query_distribution(argv[2]);
+		process_query_distribution(&argv[2]);
 	
 		int nq = atoi(argv[4]); 
 		deb("%d <= %d", nq, cfg.eval_length);

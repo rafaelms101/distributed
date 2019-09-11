@@ -22,7 +22,6 @@ constexpr int GENERATOR = 1;
 double now();
 int *ivecs_read(const char *fname, int *d_out, int *n_out);
 float *fvecs_read (const char *fname, int *d_out, int *n_out);
-std::vector<double> load_prof_times(int shard, Config&); 
 double poisson_interval(double mean_interval);
 
 #endif /* UTILS_H_ */
