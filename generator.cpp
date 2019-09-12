@@ -242,7 +242,20 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 	
 	if (ptype != ProcType::Bench) {
 		auto times = BenchExecPolicy::load_prof_times(true, 0, cfg);
-		double query_interval = cfg.query_load * times[times.size() - 1] / (times.size() - 1) / cfg.block_size;
+		
+		deb("last interval: %lf", times[times.size() - 1] / ((times.size() - 1) * cfg.block_size));
+		
+		double best = 100000;
+		for (int i = 1; i < times.size(); i++) {
+			times[i] = times[i] / (i * cfg.block_size);
+			deb("%d: %lf", i * cfg.block_size, times[i]);
+			if (times[i] < best) best = times[i];
+		}
+		deb("best interval: %lf", best);
+		
+		double query_interval = best / cfg.query_load;
+		deb("interval: %lf", query_interval);
+		
 		
 		switch (cfg.request_distribution) {
 			case RequestDistribution::Constant: {
