@@ -294,20 +294,15 @@ int QueueExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 		if (nq + processed == cfg.test_length) return num_blocks;
 
 		//case 1: execute right now
-		int queries_after_execute = pdGPU.times[num_blocks] / buffer.block_interval();
-
-		//case 2: wait for one more block
-		int queries_after_wait = pdGPU.times[num_blocks + 1] / buffer.block_interval();
+		auto queries_after_execute = pdGPU.times[num_blocks] / buffer.block_interval();
 
 		if (queries_after_execute <= nq) {
 			processed += nq;
 			return num_blocks;
 		}
 
-		if (queries_after_wait <= nq) {
-			buffer.waitForData(num_blocks + 1);
-			continue;
-		}
+		//case 2: wait for one more block
+		auto queries_after_wait = pdGPU.times[num_blocks + 1] / buffer.block_interval();
 
 		double increase_rate_execute = double(queries_after_execute - nq) / pdGPU.times[num_blocks];
 		double increase_rate_wait = double(queries_after_wait - nq) / (buffer.block_interval() + pdGPU.times[num_blocks + 1]);
