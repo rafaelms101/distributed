@@ -14,8 +14,6 @@ static void process_query_distribution(char** argv) {
 	
 	cfg.query_load = std::atof(argv[1]);
 	
-	assert(cfg.query_load <= 1);
-	
 	if (! std::strcmp(argv[0], "c")) {
 		cfg.request_distribution = RequestDistribution::Constant;
 	} else if (! std::strcmp(argv[0], "p")) {
