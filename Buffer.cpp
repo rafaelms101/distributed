@@ -2,6 +2,7 @@
 
 #include <sys/time.h>
 #include <cstring>
+#include <chrono>
 
 static double now() {
 	struct timeval tv;
@@ -99,11 +100,11 @@ void Buffer::waitForData(int n) {
 
 	waiting_to_consume = n * block_size;
 
-	if (used() < waiting_to_consume) {
-		can_consume.wait(lck, [this] { return waiting_to_consume == 0; });
-	} else {
-		waiting_to_consume = 0;
-	}
+	while (used() < waiting_to_consume) {
+		can_consume.wait_for(lck, std::chrono::milliseconds(1), [this] { return waiting_to_consume == 0; });
+	} 
+	
+	waiting_to_consume = 0;
 }
 
 void Buffer::transfer(void* ptr, int num_blocks) {
