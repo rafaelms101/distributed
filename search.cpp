@@ -131,7 +131,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	cfg.exec_policy->setup();
 
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
-	Buffer query_buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
+	Buffer query_buffer(block_size_in_bytes, 500 * 1024 * 1024 / block_size_in_bytes); //500MB
 	
 	const long distance_block_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
 	const long label_block_size_in_bytes = sizeof(faiss::Index::idx_t) * cfg.k * cfg.block_size;
