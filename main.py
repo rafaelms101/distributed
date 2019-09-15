@@ -1,4 +1,4 @@
-from statistics import median
+from statistics import median, mean
 
 file = open('/home/rafael/mestrado/distributed/log')
 content = file.read()
@@ -8,7 +8,7 @@ lines = [line for line in lines if len(line) >= 1]
 lines = [line.split() for line in lines]
 
 
-results = {'p': {}, 'c': {}}
+results = {'p': {}, 'c': {}, 'i': {}}
 it = iter(lines)
 
 for line in it:
@@ -24,16 +24,18 @@ for line in it:
         results[dist][alg] = {}
 
     if load not in results[dist][alg]:
-        results[dist][alg][load] = []
+        results[dist][alg][load] = {'rt': [], 'iv': []}
 
     if dist == 'p':
+        ls = []
         for i in range(100):
-            next(it)
+            ls.append(float(next(it)[0]))
+        results[dist][alg][load]['iv'].append(ls)
 
     response_time = float(next(it)[0])
     next(it)
 
-    results[dist][alg][load].append(response_time)
+    results[dist][alg][load]['rt'].append(response_time)
 
 
 def list_algs(results):
@@ -51,7 +53,7 @@ def list_loads(results):
     return loads
 
 
-def gen_table(type, results):
+def gen_rt_table(type, results):
     results = results[type]
     algs = list_algs(results)
     loads = list_loads(results)
@@ -70,19 +72,30 @@ def gen_table(type, results):
         table += str(load) + ' '
         for alg in static_algs:
             try:
-                table += str(median(results[('s', alg)][load])) + ' '
+                table += str(median(results[('s', alg)][load]['rt'])) + ' '
             except KeyError:
                 table += '* '
         for alg in dyn_algs:
             try:
-                table += str(median(results[alg][load])) + ' '
+                table += str(median(results[alg][load]['rt'])) + ' '
             except KeyError:
                 table += '* '
         table += '\n'
     return table
 
 
-print(gen_table('c', results))
+# results[dist][alg][load]['iv']
+def poisson_compare(results, a1, a2, load):
+    def join(ls1, ls2):
+        return mean([e1 / e2 for e1, e2 in zip(ls1, ls2)])
+
+    lss1 = results['p'][a1][load]['iv']
+    lss2 = results['p'][a2][load]['iv']
+
+    return median([join(ls1, ls2) for ls1, ls2 in zip(lss1, lss2)])
+
+
+print(gen_rt_table('c', results))
 print()
-print(gen_table('p', results))
+print(gen_rt_table('p', results))
 
