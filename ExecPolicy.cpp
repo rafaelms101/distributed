@@ -369,7 +369,7 @@ int MinGreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 int GreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 	int num_blocks = buffer.entries();
-	return std::min(num_blocks, 200);
+	return num_blocks;
 }
 
 
