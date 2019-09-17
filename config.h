@@ -42,6 +42,8 @@ struct Config {
 	bool only_min;
 	
 	ExecPolicy* exec_policy = nullptr;
+	
+	bool bench_cpu = false;
 };
 
 extern Config cfg;

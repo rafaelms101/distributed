@@ -96,7 +96,7 @@ void BenchExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_
 		finished_gpu = time_spent >= 1;
 	}
 	
-	if (! finished_cpu) {
+	if (cfg.bench_cpu && ! finished_cpu) {
 		auto before = now();
 		cpu_index->search(nq, query_buffer, cfg.k, D, I);
 		auto time_spent = now() - before;
@@ -181,7 +181,7 @@ std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, int shard_number,
 
 void BenchExecPolicy::cleanup(Config& cfg) {
 	store_profile_data(true, cfg);
-	store_profile_data(false, cfg);
+	if (cfg.bench_cpu) store_profile_data(false, cfg);
 }
 
 void GPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
