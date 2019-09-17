@@ -1,6 +1,8 @@
 cmd=mpirun
 
+echo 'cpu benching'
 ./simple cpu 5 1000 5 > cpu_bench
+echo 'gpu benching'
 ./simple gpu 5 1000 5 > gpu_bench
 
 for i in {1..5}
