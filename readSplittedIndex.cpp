@@ -188,6 +188,7 @@ faiss::InvertedLists *read_InvertedLists (IOReader *f, int io_flags, float start
 				ails->ids[i].resize(c);
 				ails->ids[i].shrink_to_fit();
 				ails->codes[i].resize(c * ails->code_size);
+				ails->codes[i].shrink_to_fit();
 				*ntotal += c;
 			}
 		}
