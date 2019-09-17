@@ -1,5 +1,8 @@
 cmd=mpirun
 
+./simple cpu 5 1000 5 > cpu_bench
+./simple gpu 5 1000 5 > gpu_bench
+
 for i in {1..5}
 do
   for load in 0.2 0.4 0.6 0.8 1 1.2
