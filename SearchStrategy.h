@@ -1,6 +1,7 @@
 #ifndef SEARCHSTRATEGY_H_
 #define SEARCHSTRATEGY_H_
 
+#include <map>
 
 #include "QueueManager.h"
 #include "utils.h"
@@ -67,11 +68,13 @@ class GpuOnlySearchStrategy : public SearchStrategy {
 	std::condition_variable should_merge;
 	std::mutex should_merge_mutex;
 	
+	std::vector<int> baseMap;
+	std::vector<int> reverseBaseMap;
 	std::vector<faiss::IndexIVFPQ*> cpu_bases;
 	std::vector<Buffer*> all_distance_buffers;
 	std::vector<Buffer*> all_label_buffers;
 	std::vector<long> proc_ids;
-	faiss::gpu::GpuIndexIVFPQ* gpu_index;
+	std::vector<faiss::gpu::GpuIndexIVFPQ*> gpu_indexes;
 	long buffer_start_id = 0;
 	
 	void merger();

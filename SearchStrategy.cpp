@@ -257,16 +257,22 @@ void GpuOnlySearchStrategy::setup() {
 
 	for (int i = 0; i < cfg.total_pieces; i++) {
 		cpu_bases.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+		
+		if (i < cfg.gpu_pieces) {
+			gpu_indexes.push_back(static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, 0, cpu_bases[i], nullptr)));
+			baseMap.push_back(i);
+			reverseBaseMap.push_back(i);
+		} else {
+			baseMap.push_back(-1);
+		}
+		
 		all_label_buffers.push_back(new Buffer(sizeof(faiss::Index::idx_t) * cfg.k, 1000000));
 		all_distance_buffers.push_back(new Buffer(sizeof(float) * cfg.k, 1000000));
 		proc_ids.push_back(0);
 	}
-
-	gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, 0, cpu_bases[0], nullptr));
 }
 
 void GpuOnlySearchStrategy::start_search_process() {
-	long current_base = 0;
 	long bases_exchanged = 0;
 
 	long log[1000][proc_ids.size()];
@@ -283,14 +289,17 @@ void GpuOnlySearchStrategy::start_search_process() {
 			long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
 			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
 
-			if (current_base != i && available_queries >= 1) {
-				switches.push_back(std::make_pair(current_base, i));
+			if (available_queries >= 1 && baseMap[i] == -1) {
+				switches.push_back(std::make_pair(reverseBaseMap[0], i));
 				for (int i = 0; i < proc_ids.size(); i++) {
 					log[bases_exchanged][i] = query_buffer.entries() * cfg.block_size - (proc_ids[i] - buffer_start_id);
 				}
 
-				gpu_index->copyFrom(cpu_bases[i]);
-				current_base = i;
+				gpu_indexes[0]->copyFrom(cpu_bases[i]);
+				baseMap[i] = 0;
+				baseMap[reverseBaseMap[0]] = -1;
+				reverseBaseMap[0] = i;
+				
 				bases_exchanged++;
 			}
 
@@ -303,7 +312,7 @@ void GpuOnlySearchStrategy::start_search_process() {
 				db->waitForSpace(nqueries);
 
 				deb("searched %ld queries on base %d", nqueries, i);
-				gpu_index->search(nqueries, buffer_ptr, cfg.k, (float*) db->peekEnd(), (faiss::Index::idx_t*) lb->peekEnd());
+				gpu_indexes[baseMap[i]]->search(nqueries, buffer_ptr, cfg.k, (float*) db->peekEnd(), (faiss::Index::idx_t*) lb->peekEnd());
 
 				db->add(nqueries);
 				lb->add(nqueries);
