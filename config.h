@@ -16,7 +16,7 @@ class ExecPolicy;
 struct Config {
 	//database config
 	const int d = 128; //vector dimension
-	const int nb = 10000000; //database size
+	const int nb = 500000000; //database size
 	const int ncentroids = 4096; //number of centroids
 	const int m = 8; //vector size after compression, in bytes
 	const int nq = 10000; //total number of distinct queries
