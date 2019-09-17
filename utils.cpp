@@ -53,33 +53,6 @@ float * fvecs_read (const char *fname, int *d_out, int *n_out) {
     return x;
 }
 
-std::vector<double> load_prof_times(Config& cfg) {
-	char file_path[100];
-	sprintf(file_path, "prof/%d_%d_%d_%d_%d_%d", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
-	std::ifstream file;
-	file.open(file_path);
-
-	if (! file.good()) {
-		std::printf("File prof/%d_%d_%d_%d_%d_%d not found", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
-		std::exit(- 1);
-	}
-
-	int total_size;
-	file >> total_size;
-
-	std::vector<double> times(total_size + 1);
-
-	times[0] = 0;
-
-	for (int i = 1; i <= total_size; i++) {
-		file >> times[i];
-	}
-
-	file.close();
-	
-	return times;
-}
-
 faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cfg) {
 	deb("Started loading");
 
@@ -134,3 +107,31 @@ void load_bench_data(bool cpu, long& best) {
 	double tmp;
 	load_bench_data(cpu, best, tmp);
 }
+
+std::vector<double> load_prof_times(bool gpu, int shard_number, Config& cfg) {
+	char file_path[100];
+	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+	std::ifstream file;
+	file.open(file_path);
+
+	if (!file.good()) {
+		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d_%d doesn't exist\n", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+		std::exit(-1);
+	}
+
+	int total_size;
+	file >> total_size;
+
+	std::vector<double> times(total_size + 1);
+
+	times[0] = 0;
+
+	for (int i = 1; i <= total_size; i++) {
+		file >> times[i];
+	}
+
+	file.close();
+
+	return times;
+}
+

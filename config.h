@@ -6,6 +6,7 @@ constexpr int BENCH_SIZE = 1000; //upper limit on maximum block size when in ben
 constexpr char SRC_PATH[] = "/home/rafael/mestrado/bigann"; //folder where the bigann database is stored
 constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are stored
 constexpr int BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
+constexpr char PROF_ROOT[] = "prof";
 
 enum class RequestDistribution {Constant, Variable_Poisson};
 enum class SearchAlgorithm {Cpu, Gpu, Hybrid, CpuFixed};

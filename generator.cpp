@@ -246,12 +246,21 @@ static double* query_start_time(double (*next_interval)(double), double param, C
 void generator(int nshards, Config& cfg) {
 	double* query_start;
 	
-	long best;
-	double best_time_per_query;
-	load_bench_data(false, best, best_time_per_query);
+	auto times = load_prof_times(true, 0, cfg);
 	
-	double query_interval = best_time_per_query / cfg.query_load;
-	deb("QUERY INTERVAL: %lf", query_interval);
+	double best = 100000;
+	for (int i = 1; i < times.size(); i++) {
+		times[i] = times[i] / (i * cfg.block_size);
+		deb("%d: %lf", i * cfg.block_size, times[i]);
+		if (times[i] < best)
+			best = times[i];
+	}
+	
+	deb("best interval: %lf", best);
+	double query_interval = best / cfg.query_load;
+	deb("interval: %lf", query_interval);
+	
+
 
 	switch (cfg.request_distribution) {
 		case RequestDistribution::Constant: {
