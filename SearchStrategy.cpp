@@ -140,19 +140,19 @@ void HybridSearchStrategy::gpu_process(std::mutex* cleanup_mutex) {
 		}
 	}
 
-	std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
-	for (int j = 0; j < qm->bases_exchanged; j++) {
-		for (int i = 0; i < qm->_queues.size(); i++) {
-			if (i == qm->switches[j].first) {
-				std::printf("<");
-			} else if (i == qm->switches[j].second) {
-				std::printf(">");
-			}
-
-			std::printf("%ld ", qm->log[j][i]);
-		}
-		std::printf("\n");
-	}
+//	std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
+//	for (int j = 0; j < qm->bases_exchanged; j++) {
+//		for (int i = 0; i < qm->_queues.size(); i++) {
+//			if (i == qm->switches[j].first) {
+//				std::printf("<");
+//			} else if (i == qm->switches[j].second) {
+//				std::printf(">");
+//			}
+//
+//			std::printf("%ld ", qm->log[j][i]);
+//		}
+//		std::printf("\n");
+//	}
 }
 
 void HybridSearchStrategy::cpu_process(std::mutex* cleanup_mutex) {
@@ -185,7 +185,7 @@ void HybridSearchStrategy::setup() {
 
 	for (int i = 0; i < pieces; i++) {
 		auto cpu_index = load_index(base_start + i * step, base_start + (i + 1) * step, cfg);
-		deb("Creating index from %f to %f", start_percent + i * step, start_percent + (i + 1) * step);
+		deb("Creating index from %f to %f", base_start + i * step, base_start + (i + 1) * step);
 		QueryQueue* qq = new QueryQueue(cpu_index, qm, i);
 
 		if (i < gpu_pieces) {
@@ -462,7 +462,7 @@ void CpuFixedSearchStrategy::setup() {
 	auto cpu_share = (cfg.total_pieces - cfg.gpu_pieces) / static_cast<float>(cfg.total_pieces);
 
 	cpu_index = load_index(base_start, base_start + total_share * cpu_share, cfg);
-	deb("loading cpu base from %.2f to %.2f", start_percent, start_percent + total_share * cpu_share);
+	deb("loading cpu base from %.2f to %.2f", base_start, base_start + total_share * cpu_share);
 	all_label_buffers.push_back(new Buffer(sizeof(faiss::Index::idx_t) * cfg.k, 1000000));
 	all_distance_buffers.push_back(new Buffer(sizeof(float) * cfg.k, 1000000));
 	proc_ids.push_back(0);
