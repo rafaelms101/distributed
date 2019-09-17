@@ -26,7 +26,7 @@ void handle_parameters(int argc, char* argv[]) {
 		std::exit(- 1);
 	}
 
-	cfg.query_interval = std::atof(argv[2]);
+	cfg.query_load = std::atof(argv[2]);
 	srand(std::atoi(argv[3]));
 	
 	if (! std::strcmp(argv[4], "c")) {

@@ -246,14 +246,20 @@ static double* query_start_time(double (*next_interval)(double), double param, C
 void generator(int nshards, Config& cfg) {
 	double* query_start;
 	
+	long best;
+	double best_time_per_query;
+	load_bench_data(false, best, best_time_per_query);
+	
+	double query_interval = best_time_per_query / cfg.query_load;
+	deb("QUERY INTERVAL: %lf", query_interval);
 
 	switch (cfg.request_distribution) {
 		case RequestDistribution::Constant: {
-			query_start = query_start_time(constant_interval, cfg.query_interval, cfg);
+			query_start = query_start_time(constant_interval, query_interval, cfg);
 			break;
 		}
 		case RequestDistribution::Variable_Poisson: {
-			query_start = query_start_time(poisson_constant_interval, cfg.query_interval, cfg);
+			query_start = query_start_time(poisson_constant_interval, query_interval, cfg);
 			break;
 		}
 	}

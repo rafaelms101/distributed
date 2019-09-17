@@ -32,7 +32,7 @@ struct Config {
 	
 	//mode specific config
 	RequestDistribution request_distribution;
-	double query_interval;
+	double query_load;
 	int processing_size;
 	bool only_min;
 	

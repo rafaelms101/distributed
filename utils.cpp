@@ -97,3 +97,40 @@ faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cf
 	cpu_index->nprobe = cfg.nprobe;
 	return cpu_index;
 }
+
+void load_bench_data(bool cpu, long& best, double& best_time_per_query) {
+	char file_path[100];
+	sprintf(file_path, "%s_bench", cpu ? "cpu" : "gpu");
+	std::ifstream file;
+	file.open(file_path);
+
+	if (! file.good()) {
+		std::printf("File %s_bench", cpu ? "cpu" : "gpu");
+		std::exit(-1);
+	}
+
+	int total_size;
+	file >> total_size;
+
+	best = 0;
+	best_time_per_query = 9999999;
+	
+	for (int i = 2; i <= total_size; i++) {
+		long qty;
+		file >> qty;
+		double total_time;
+		file >> total_time;
+		
+		if (total_time / qty < best_time_per_query) {
+			best = qty;
+			best_time_per_query = total_time / qty;
+		}
+	}
+
+	file.close();
+}
+
+void load_bench_data(bool cpu, long& best) {
+	double tmp;
+	load_bench_data(cpu, best, tmp);
+}

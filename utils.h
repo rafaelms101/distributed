@@ -26,5 +26,7 @@ int *ivecs_read(const char *fname, int *d_out, int *n_out);
 float *fvecs_read (const char *fname, int *d_out, int *n_out);
 std::vector<double> load_prof_times(Config&); 
 faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cfg);
+void load_bench_data(bool cpu, long& best, double& best_time_per_query);
+void load_bench_data(bool cpu, long& best);
 
 #endif /* UTILS_H_ */
