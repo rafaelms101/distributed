@@ -83,33 +83,6 @@ static double poisson_constant_interval(double mean_interval) {
 	return current_interval;
 }
 
-static double fast_slow_fast_interval(int eval_length) {
-	constexpr double slow_time = 0.001;
-	constexpr double fast_time = 0.0001;
-	double delta_time = (slow_time - fast_time) / (eval_length / 2);
-
-	static bool going_up = false;
-	static double curr_time = slow_time;
-
-	if (going_up) {
-		curr_time = curr_time + delta_time;
-	} else {
-		curr_time = curr_time - delta_time;
-	}
-
-	if (curr_time > slow_time) {
-		deb("Now going up in speed");
-		curr_time = slow_time - delta_time;
-		going_up = ! going_up;
-	} else if (curr_time < fast_time) {
-		deb("Now going down in speed");
-		curr_time = fast_time + delta_time;
-		going_up = ! going_up;
-	}
-
-	return curr_time;
-}
-
 static int next_query(const int test_length, double* start_query_time, Config& cfg) {
 	static int qn = 0;
 	

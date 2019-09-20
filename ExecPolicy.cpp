@@ -230,7 +230,7 @@ void DynamicExecPolicy::setup() {
 		if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
 	}
 
-	std::pair<int, int> limits = longest_contiguous_region(time_per_block[minBlock], 0.1, time_per_block);
+	std::pair<int, int> limits = longest_contiguous_region(time_per_block[minBlock], tolerance, time_per_block);
 	pdGPU.min_block = limits.first;
 	pdGPU.max_block = limits.second;
 
