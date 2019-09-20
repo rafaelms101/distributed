@@ -9,7 +9,7 @@ constexpr int BENCH_REPEATS = 3; //number of times that a certain number of quer
 constexpr char PROF_ROOT[] = "prof";
 
 enum class RequestDistribution {Constant, Variable_Poisson};
-enum class SearchAlgorithm {Cpu, Gpu, Hybrid, CpuFixed};
+enum class SearchAlgorithm {Cpu, Gpu, Hybrid, CpuFixed, Fixed};
 
 class ExecPolicy;
 

@@ -58,6 +58,15 @@ void handle_parameters(int argc, char* argv[]) {
 		cfg.search_algorithm = SearchAlgorithm::CpuFixed;
 		cfg.gpu_pieces = atoi(argv[5]);
 		cfg.total_pieces = atoi(argv[6]);
+	} else if (! std::strcmp(argv[4], "f")) {
+		if (argc != 7) {
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::exit(- 1);
+		}
+		
+		cfg.search_algorithm = SearchAlgorithm::Fixed;
+		cfg.gpu_pieces = atoi(argv[5]);
+		cfg.total_pieces = atoi(argv[6]);
 	} else  {
 		std::printf("Wrong algorithm.\n");
 		std::exit(-1);

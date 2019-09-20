@@ -103,6 +103,8 @@ void search(int shard, int nshards, Config& cfg) {
 		strategy = new GpuOnlySearchStrategy(query_buffer, distance_buffer, label_buffer, base_start, base_end, &res);
 	} else if (cfg.search_algorithm == SearchAlgorithm::CpuFixed) {
 		strategy = new CpuFixedSearchStrategy(query_buffer, distance_buffer, label_buffer, base_start, base_end, &res);
+	} else if (cfg.search_algorithm == SearchAlgorithm::Fixed) {
+		strategy = new FixedSearchStrategy(query_buffer, distance_buffer, label_buffer, base_start, base_end, &res);
 	}
 	
 	strategy->setup();

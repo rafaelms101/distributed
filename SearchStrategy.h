@@ -110,4 +110,30 @@ public:
 	void start_search_process();
 };
 
+class FixedSearchStrategy : public SearchStrategy {
+	faiss::IndexIVFPQ* cpu_index;
+	faiss::gpu::GpuIndexIVFPQ* gpu_index;
+	
+	std::vector<Buffer*> all_distance_buffers;
+	std::vector<Buffer*> all_label_buffers;
+
+	long cpu_proc_id;
+	long gpu_proc_id;
+	
+	long buffer_start_id = 0;
+	long sent = 0;
+	std::mutex sync_mutex;
+	
+	constexpr static long queries_threshold = 120l;
+	
+	void cpu_process();
+	void gpu_process();
+	
+public:
+	using SearchStrategy::SearchStrategy;
+	
+	void setup();
+	void start_search_process();
+};
+
 #endif
