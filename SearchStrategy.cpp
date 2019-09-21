@@ -519,9 +519,9 @@ void FixedSearchStrategy::cpu_process() {
 	while (sent < cfg.test_length) {
 		long buffer_idx = cpu_proc_id - buffer_start_id;
 		long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
-		auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
 
 		if (available_queries >= 1) {
+			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
 			long nqueries = std::min(queries_threshold, available_queries);
 
 			all_label_buffers[0]->waitForSpace(nqueries);
