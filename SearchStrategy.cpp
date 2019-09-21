@@ -522,7 +522,7 @@ void FixedSearchStrategy::cpu_process() {
 
 		if (available_queries >= 1) {
 			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
-			long nqueries = std::min(queries_threshold, available_queries);
+			long nqueries = std::min(best_query_point_cpu, available_queries);
 
 			all_label_buffers[0]->waitForSpace(nqueries);
 			all_distance_buffers[0]->waitForSpace(nqueries);
@@ -558,7 +558,7 @@ void FixedSearchStrategy::gpu_process() {
 		sync_mutex.unlock();
 
 		while (available_queries >= 1) {
-			long nqueries = std::min(queries_threshold, available_queries);
+			long nqueries = std::min(best_query_point_gpu, available_queries);
 
 			all_label_buffers[1]->waitForSpace(nqueries);
 			all_distance_buffers[1]->waitForSpace(nqueries);

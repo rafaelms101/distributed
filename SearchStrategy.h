@@ -98,8 +98,6 @@ class CpuFixedSearchStrategy : public SearchStrategy {
 	long sent = 0;
 	std::mutex sync_mutex;
 	
-	constexpr static long queries_threshold = 120l;
-	
 	void cpu_process();
 	void gpu_process();
 	
@@ -123,8 +121,6 @@ class FixedSearchStrategy : public SearchStrategy {
 	long buffer_start_id = 0;
 	long sent = 0;
 	std::mutex sync_mutex;
-	
-	constexpr static long queries_threshold = 120l;
 	
 	void cpu_process();
 	void gpu_process();
