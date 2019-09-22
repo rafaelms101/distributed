@@ -16,13 +16,13 @@ class QueueManager {
 	Buffer* distance_buffer;
 	long start_out_id = 0;
 	long _sent_queries = 0;
-	bool _gpu_loading = false;
 	
 	Buffer* query_buffer;
 	long buffer_start_query_id = 0;
 	std::mutex mutex_buffer_start;
 	
 public:
+	bool gpu_loading = false;
 	std::list<QueryQueue*> _queues;
 	long bases_exchanged = 0;
 	long log[1000][100];
@@ -32,7 +32,6 @@ public:
 	void addQueryQueue(QueryQueue* qq);
 	int sent_queries();
 	std::list<QueryQueue*>& queues();
-	bool gpu_loading();
 	long cpu_load();
 	QueryQueue* biggestCPUQueue();
 	QueryQueue* firstGPUQueue();

@@ -131,7 +131,7 @@ void HybridSearchStrategy::gpu_process(std::mutex* cleanup_mutex) {
 			cleanup_mutex->unlock();
 		}
 
-		if (emptyQueue) {
+		if (emptyQueue && ! qm->gpu_loading) {
 			QueryQueue* qq = qm->biggestCPUQueue();
 
 			if (qq->size() > 1000) { //arbitrary threshold

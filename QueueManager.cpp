@@ -1,6 +1,7 @@
 #include "QueueManager.h"
 
 #include "utils.h"
+#include <thread>
 
 void QueueManager::shrinkQueryBuffer() {
 	mutex_buffer_start.lock();
@@ -107,10 +108,6 @@ std::list<QueryQueue*>& QueueManager::queues() {
 	return _queues;
 }
 
-bool QueueManager::gpu_loading() {
-	return _gpu_loading;
-}
-
 long QueueManager::cpu_load() {
 	long load = 0;
 
@@ -158,10 +155,18 @@ long QueueManager::numberOfQueries(long starting_query_id) {
 	return sz;
 }
 
+static void transferToGPU(faiss::gpu::GpuIndexIVFPQ* gpu_index, QueryQueue* to_gpu, QueueManager* qm) {
+	gpu_index->copyFrom(to_gpu->cpu_index());
+	to_gpu->gpu_index = gpu_index;
+	to_gpu->on_gpu = true;
+	qm->gpu_loading = false;
+}
+
 void QueueManager::switchToGPU(QueryQueue* to_gpu) {
 	QueryQueue* to_cpu = firstGPUQueue();
 	
 	switches.push_back(std::make_pair(to_cpu->id, to_gpu->id));
+	
 	for (auto q : _queues) {
 		log[bases_exchanged][q->id] = q->size();
 	}
@@ -171,10 +176,9 @@ void QueueManager::switchToGPU(QueryQueue* to_gpu) {
 	auto gpu_index = to_cpu->gpu_index;
 	to_cpu->gpu_index = nullptr;
 	
-	_gpu_loading = true;
 	bases_exchanged++;
-	gpu_index->copyFrom(to_gpu->cpu_index());
-	to_gpu->gpu_index = gpu_index;
-	to_gpu->on_gpu = true;
-	_gpu_loading = false;
+	
+	gpu_loading = true;
+	std::thread thread(transferToGPU, gpu_index, to_gpu, this);
+	thread.detach();
 }
