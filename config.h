@@ -3,7 +3,7 @@
 
 #include <vector>
 
-constexpr int BENCH_SIZE = 5000; //upper limit on maximum block size when in benchmark mode
+constexpr int BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
 
 constexpr char SRC_PATH[] = "/home/rafael/mestrado/bigann"; //folder where the bigann database is stored
 constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are stored
@@ -26,6 +26,7 @@ struct Config {
 	int k = 10;
 	int nprobe = 16;
 	int block_size = 5;
+	int bench_step = block_size;
 
 	
 	// filled elsewhere

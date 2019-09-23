@@ -109,18 +109,21 @@ static void send_finished_signal(int nshards) {
 }
 
 static void bench_generator(int num_queries, int nshards, Config& cfg) {
-	auto num_blocks = num_queries / cfg.block_size;
-	
-	assert(num_queries <= cfg.nq);
-
 	float* xq = load_queries(cfg.d, cfg.nq);
-
-	for (int i = 1; i <= num_blocks; i++) {
+	int nq = cfg.bench_step;
+	
+	assert(num_queries % cfg.bench_step == 0);
+	
+	while (nq <= num_queries) {
+		auto num_blocks = nq / cfg.block_size;
+		
 		for (int repeats = 1; repeats <= BENCH_REPEATS; repeats++) {
-			for (int b = 1; b <= i; b++) {
+			for (int b = 1; b <= num_blocks; b++) {
 				send_queries(nshards, xq, cfg.block_size, cfg.d);
 			}
 		}
+
+		nq += cfg.bench_step; 
 	}
 
 	send_finished_signal(nshards);

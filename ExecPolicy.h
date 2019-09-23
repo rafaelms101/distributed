@@ -72,8 +72,8 @@ private:
 	int shard;
 	bool finished_cpu = false;
 	bool finished_gpu = false;
-	int nrepeats = 0;
-	int nb = 1;
+	int nrepeats = BENCH_REPEATS;
+	int nb = 0;
 	std::vector<double> procTimesGpu;
 	std::vector<double> procTimesCpu;
 

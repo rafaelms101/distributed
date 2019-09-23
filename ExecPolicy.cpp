@@ -111,7 +111,7 @@ void BenchExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_
 int BenchExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	if (nrepeats >= BENCH_REPEATS) {
 		nrepeats = 0;
-		nb++;
+		nb += cfg.bench_step / cfg.block_size;
 	}
 
 	nrepeats++;
