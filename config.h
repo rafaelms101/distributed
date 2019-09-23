@@ -10,6 +10,9 @@ constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are 
 constexpr char PROF_ROOT[] = "prof"; //folder where the indexed databases are stored
 constexpr int BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
 
+constexpr int BATCH_PROC = 1000;
+constexpr double GPU_RATIO = 0.5; 
+
 enum class RequestDistribution {Constant, Variable_Poisson, Batch};
 
 class ExecPolicy;

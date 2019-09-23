@@ -19,10 +19,14 @@ public:
 	virtual void cleanup(Config& cfg) {}
 };
 
-class CPUGreedyPolicy : public ExecPolicy {	
+class CPUPolicy : public ExecPolicy {
+public:
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+};
+
+class CPUGreedyPolicy : public CPUPolicy {	
 public:
 	int numBlocksRequired(Buffer& buffer, Config& cfg);
-	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
 };
 
 class GPUPolicy : public ExecPolicy {
@@ -58,13 +62,14 @@ public:
 	void cleanup(Config& cfg) { gpuPolice->cleanup(cfg); }
 };
 
-class StaticExecPolicy : public GPUPolicy {
+class StaticExecPolicy : public ExecPolicy {
 private:
 	int block_size;
+	bool gpu;
 
 public:
-	StaticExecPolicy(int bs) : block_size(bs) {}
-	
+	StaticExecPolicy(bool _gpu, int bs) : block_size(bs), gpu(_gpu) {}
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
 	int numBlocksRequired(Buffer& buffer, Config& cfg) { return block_size; }
 };
 

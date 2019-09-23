@@ -10,12 +10,6 @@ int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	return num_blocks;
 }
 
-void CPUGreedyPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
-	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
-	cpu_index->search(nq, query_buffer, cfg.k, D, I);
-	buffer.consume(nq / cfg.block_size);
-}
-
 void HybridPolicy::setup() {
 	gpuPolice->setup();
 	timesCPU = BenchExecPolicy::load_prof_times(false, shard, cfg);
@@ -187,6 +181,18 @@ void BenchExecPolicy::cleanup(Config& cfg) {
 void GPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	gpu_index->search(nq, query_buffer, cfg.k, D, I);
+	buffer.consume(nq / cfg.block_size);
+}
+
+void CPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+	cpu_index->search(nq, query_buffer, cfg.k, D, I);
+	buffer.consume(nq / cfg.block_size);
+}
+
+void StaticExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+	(gpu ? gpu_index : cpu_index)->search(nq, query_buffer, cfg.k, D, I);
 	buffer.consume(nq / cfg.block_size);
 }
 
