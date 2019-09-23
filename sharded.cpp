@@ -68,7 +68,7 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 			} else if (! std::strcmp(argv[4], "c")) {
 				cfg.exec_policy = new CPUGreedyPolicy();
 			} else if (! std::strcmp(argv[4], "h")) {
-				cfg.exec_policy = new HybridBatch(3.3);
+				cfg.exec_policy = new HybridBatch(0.7, 1000);
 			} 
 		}
 		

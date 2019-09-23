@@ -31,10 +31,11 @@ public:
 };
 
 class HybridBatch : public ExecPolicy {
-	double gpuSpeedup;
+	double gpuRatio;
+	int procSize;
 	
 public:
-	HybridBatch(double _gpuSpeedup) : gpuSpeedup(_gpuSpeedup) {}
+	HybridBatch(double _gpuRatio, int _procSize) : gpuRatio(_gpuRatio), procSize(_procSize) {}
 	int numBlocksRequired(Buffer& buffer, Config& cfg);
 	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
 };
