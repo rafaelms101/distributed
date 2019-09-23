@@ -10,9 +10,6 @@ constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are 
 constexpr char PROF_ROOT[] = "prof"; //folder where the indexed databases are stored
 constexpr int BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
 
-constexpr int BATCH_PROC = 1000;
-constexpr double GPU_RATIO = 0.5; 
-
 enum class RequestDistribution {Constant, Variable_Poisson, Batch};
 
 class ExecPolicy;
@@ -33,8 +30,8 @@ struct Config {
 
 	
 	// filled elsewhere
-	int test_length = 100000; //how many queries will be sent in total
-	int eval_length = 100000; //of the sent queries, how many will be used to compute the average response time
+	int test_length = 50000; //how many queries will be sent in total
+	int eval_length = 50000; //of the sent queries, how many will be used to compute the average response time
 	
 	long temp_memory_gpu = 800 * 1024 * 1024;
 	int poisson_intervals = 100;
