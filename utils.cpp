@@ -57,5 +57,8 @@ double poisson_interval(double mean_interval) {
 	double r = 0;
 	
 	while (r == 0) r = static_cast<double>(rand()) / RAND_MAX;
-	return -std::log(r) * mean_interval;
+	auto ret = -std::log(r) * mean_interval;
+	ret = std::min(ret, 5 * mean_interval);
+	ret = std::max(ret, mean_interval / 5);
+	return ret;
 }
