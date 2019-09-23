@@ -7,7 +7,7 @@
 int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 	int num_blocks = buffer.entries();
-	return std::min(num_blocks, 200);
+	return num_blocks;
 }
 
 void CPUGreedyPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
