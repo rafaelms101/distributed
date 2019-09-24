@@ -217,7 +217,7 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 	double* query_start;
 	
 	if (ptype != ProcType::Bench) {
-		auto times = BenchExecPolicy::load_prof_times(true, 0, cfg);
+		auto times = BenchExecPolicy::load_prof_times(true, cfg);
 		
 		deb("last interval: %lf", times[times.size() - 1] / ((times.size() - 1) * cfg.block_size));
 		

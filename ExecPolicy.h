@@ -75,7 +75,6 @@ public:
 
 class BenchExecPolicy : public ExecPolicy {
 private:
-	int shard;
 	bool finished_cpu = false;
 	bool finished_gpu = false;
 	int nrepeats = BENCH_REPEATS;
@@ -86,13 +85,12 @@ private:
 	void store_profile_data(bool gpu, Config& cfg);
 	
 public:
-	BenchExecPolicy(int _shard) : shard(_shard) {} 
+	BenchExecPolicy() {} 
 	int numBlocksRequired(Buffer& buffer, Config& cfg);
 	void cleanup(Config& cfg);
 	
 	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
-	static std::vector<double> load_prof_times(bool gpu, int shard_number, Config& cfg);
-	
+	static std::vector<double> load_prof_times(bool gpu, Config& cfg);
 };
 
 
@@ -103,10 +101,9 @@ protected:
 	
 private:
 	std::pair<int, int> longest_contiguous_region(double min, double tolerance, std::vector<double>& time_per_block);
-	int shard;
 	
 public:
-	DynamicExecPolicy(int _shard) : shard(_shard) {} 
+	DynamicExecPolicy() {} 
 	void setup();
 };
 

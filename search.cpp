@@ -125,7 +125,7 @@ static void store_profile_data(bool gpu, std::vector<double>& procTimes, int sha
 	file.close();
 }
 
-void search(int shard, int nshards, ProcType ptype, Config& cfg) {
+void search(ProcType ptype, Config& cfg) {
 	std::vector<double> procTimesGpu;
 	
 	cfg.exec_policy->setup();
@@ -141,7 +141,7 @@ void search(int shard, int nshards, ProcType ptype, Config& cfg) {
 	faiss::gpu::StandardGpuResources res;
 	res.setTempMemory(cfg.temp_memory_gpu);
 
-	auto cpu_index = load_index(shard, nshards, cfg);
+	auto cpu_index = load_index(0, 1, cfg);
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, 0, cpu_index, nullptr);
 	
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.eval_length * cfg.k];

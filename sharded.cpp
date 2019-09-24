@@ -54,17 +54,17 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 		
 		if (shard >= 0) {
 			if (! std::strcmp(argv[4], "min")) {
-				cfg.exec_policy = new MinExecPolicy(shard);
+				cfg.exec_policy = new MinExecPolicy();
 			} else if (! std::strcmp(argv[4], "max")) {
-				cfg.exec_policy = new MaxExecPolicy(shard);
+				cfg.exec_policy = new MaxExecPolicy();
 			} else if (! std::strcmp(argv[4], "q")) {
-				cfg.exec_policy = new QueueExecPolicy(shard);
+				cfg.exec_policy = new QueueExecPolicy();
 			} else if (! std::strcmp(argv[4], "gmin")) {
-				cfg.exec_policy = new MinGreedyExecPolicy(shard);
+				cfg.exec_policy = new MinGreedyExecPolicy();
 			} else if (! std::strcmp(argv[4], "g")) {
 				cfg.exec_policy = new GreedyExecPolicy();
 			} else if (! std::strcmp(argv[4], "qmax")) {
-				cfg.exec_policy = new QueueMaxExecPolicy(shard);
+				cfg.exec_policy = new QueueMaxExecPolicy();
 			} else if (! std::strcmp(argv[4], "c")) {
 				cfg.exec_policy = new CPUGreedyPolicy();
 			} else if (! std::strcmp(argv[4], "h")) {
@@ -112,7 +112,7 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 		
 		
 	} else if (ptype == ProcType::Bench) {
-		cfg.exec_policy = new BenchExecPolicy(shard);
+		cfg.exec_policy = new BenchExecPolicy();
 		cfg.test_length = cfg.eval_length = BENCH_SIZE * BENCH_REPEATS;
 	}
 
@@ -152,7 +152,7 @@ int main(int argc, char* argv[]) {
     } else if (world_rank == 0) {
     	aggregator(world_size - 2, ptype, cfg);
     } else {
-    	search(shard, nshards, ptype, cfg);
+    	search(ptype, cfg);
     }
     
     // Finalize the MPI environment.

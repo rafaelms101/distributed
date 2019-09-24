@@ -12,8 +12,8 @@ int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 
 void HybridPolicy::setup() {
 	gpuPolice->setup();
-	timesCPU = BenchExecPolicy::load_prof_times(false, shard, cfg);
-	timesGPU = BenchExecPolicy::load_prof_times(true, shard, cfg);
+	timesCPU = BenchExecPolicy::load_prof_times(false, cfg);
+	timesGPU = BenchExecPolicy::load_prof_times(true, cfg);
 }
 
 int HybridPolicy::bsearch(std::vector<double>& times, double val) {
@@ -119,7 +119,7 @@ void BenchExecPolicy::store_profile_data(bool gpu, Config& cfg) {
 
 	//now we write the time data on a file
 	char file_path[100];
-	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard);
+	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 	std::ofstream file;
 	file.open(file_path);
 
@@ -146,14 +146,14 @@ void BenchExecPolicy::store_profile_data(bool gpu, Config& cfg) {
 	file.close();
 }
 
-std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, int shard_number, Config& cfg) {
+std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, Config& cfg) {
 	char file_path[100];
-	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 	std::ifstream file;
 	file.open(file_path);
 
 	if (!file.good()) {
-		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d_%d doesn't exist\n", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d doesn't exist\n", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 		std::exit(-1);
 	}
 
@@ -222,7 +222,7 @@ std::pair<int, int> DynamicExecPolicy::longest_contiguous_region(double min, dou
 }
 
 void DynamicExecPolicy::setup() {
-	std::vector<double> times(BenchExecPolicy::load_prof_times(true, shard, cfg));
+	std::vector<double> times(BenchExecPolicy::load_prof_times(true, cfg));
 	std::vector<double> time_per_block(times.size());
 
 	for (int i = 1; i < times.size(); i++) {
