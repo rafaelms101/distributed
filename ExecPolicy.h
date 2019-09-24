@@ -45,21 +45,19 @@ public:
 };
 
 class HybridPolicy : public ExecPolicy {
-	GPUPolicy* gpuPolice;
 	std::vector<double> timesCPU;
 	std::vector<double> timesGPU;
 	int blocks_cpu = 0;
 	int blocks_gpu = 0;
-	int shard;
 	
 	int bsearch(std::vector<double>& times, double val);
 	
 public:
-	HybridPolicy(GPUPolicy* _gpuPolice, int _shard) : gpuPolice(_gpuPolice), shard(_shard) {}
+	HybridPolicy() {}
 	void setup();
 	int numBlocksRequired(Buffer& buffer, Config& cfg);
 	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
-	void cleanup(Config& cfg) { gpuPolice->cleanup(cfg); }
+	void cleanup(Config& cfg) { }
 };
 
 class StaticExecPolicy : public ExecPolicy {

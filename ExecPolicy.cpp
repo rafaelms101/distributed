@@ -11,9 +11,32 @@ int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 }
 
 void HybridPolicy::setup() {
-	gpuPolice->setup();
 	timesCPU = BenchExecPolicy::load_prof_times(false, cfg);
 	timesGPU = BenchExecPolicy::load_prof_times(true, cfg);
+}
+
+static int cpu_blocks(std::vector<double>& cpu, std::vector<double>& gpu, int nb) {
+	int nbgpu = 0;
+	int nbcpu = nb;
+	
+	double best_time = cpu[nbcpu];
+	int bestnb = nbcpu;
+	
+	nbgpu++;
+	nbcpu--;
+	
+	while (nbcpu >= 0) {
+		double time = std::max(cpu[nbcpu], gpu[nbgpu]);
+		if (time < best_time) {
+			best_time = time;
+			bestnb = nbcpu;
+		}
+		
+		nbgpu++;
+		nbcpu--;
+	}
+	
+	return bestnb;
 }
 
 int HybridPolicy::bsearch(std::vector<double>& times, double val) {
@@ -35,11 +58,13 @@ int HybridPolicy::bsearch(std::vector<double>& times, double val) {
 }
 
 int HybridPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	blocks_gpu = gpuPolice->numBlocksRequired(buffer, cfg);
-	auto expected_time = timesGPU[blocks_gpu];
-	blocks_cpu = bsearch(timesCPU, expected_time);
+	buffer.waitForData(1);
+	int num_blocks = buffer.entries();
+	num_blocks = std::min(num_blocks, 100);
 	
-	return blocks_gpu + blocks_cpu;
+	blocks_cpu = cpu_blocks(timesCPU, timesGPU, num_blocks);
+	
+	return num_blocks;
 }
 
 static bool gpu_search(faiss::Index* gpu_index, int nq_gpu, float* query_buffer, faiss::Index::idx_t* I, float* D) {
