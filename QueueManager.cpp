@@ -158,13 +158,11 @@ long QueueManager::numberOfQueries(long starting_query_id) {
 static void transferToGPU(faiss::gpu::GpuIndexIVFPQ* gpu_index, QueryQueue* to_gpu, QueueManager* qm) {
 	gpu_index->copyFrom(to_gpu->cpu_index());
 	to_gpu->gpu_index = gpu_index;
-	qm->gpu_loading = false;
 	to_gpu->on_gpu = true;
+	qm->gpu_loading = false;
 }
 
-void QueueManager::switchToGPU(QueryQueue* to_gpu) {
-	QueryQueue* to_cpu = firstGPUQueue();
-	
+void QueueManager::switchToGPU(QueryQueue* to_gpu, QueryQueue* to_cpu) {
 	switches.push_back(std::make_pair(to_cpu->id, to_gpu->id));
 	
 	for (auto q : _queues) {

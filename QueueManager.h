@@ -37,7 +37,7 @@ public:
 	QueryQueue* firstGPUQueue();
 	float* ptrToQueryBuffer(long query_id);
 	long numberOfQueries(long starting_query_id);
-	void switchToGPU(QueryQueue*);
+	void switchToGPU(QueryQueue* to_gpu, QueryQueue* to_cpu);
 	void shrinkQueryBuffer();
 	void mergeResults();
 };
