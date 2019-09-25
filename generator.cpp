@@ -83,6 +83,8 @@ static double poisson_constant_interval(double mean_interval) {
 		double r = 0;
 		while (r == 0 || r == 1) r = static_cast<double>(rand()) / RAND_MAX;
 		current_interval = - std::log(r) * mean_interval;
+		current_interval = std::max(mean_interval * 0.2, current_interval);
+		current_interval = std::min(mean_interval * 5, current_interval);
 		assert(current_interval != 0);
 		nq = 0;
 	}
