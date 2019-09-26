@@ -21,6 +21,8 @@ class QueueManager {
 	long buffer_start_query_id = 0;
 	std::mutex mutex_buffer_start;
 	
+	void transferProcess(faiss::gpu::GpuIndexIVFPQ* gpu_index, QueryQueue* to_gpu);
+	
 public:
 	bool gpu_loading = false;
 	std::list<QueryQueue*> _queues;
