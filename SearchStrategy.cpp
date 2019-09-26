@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <fstream>
+#include <unistd.h>
 
 #include "QueryQueue.h"
 
@@ -144,7 +145,9 @@ void HybridSearchStrategy::gpu_process(std::mutex* cleanup_mutex) {
 		}
 	}
 	
-	while (qm->gpu_loading);
+	while (qm->gpu_loading) {
+		usleep(1 * 1000 * 1000);
+	}
 
 //	std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
 //	for (int j = 0; j < qm->bases_exchanged; j++) {
