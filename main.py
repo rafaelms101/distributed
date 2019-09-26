@@ -1,6 +1,6 @@
-from statistics import median, mean
+from statistics import median, mean, stdev
 
-file = open('/home/rafael/mestrado/distributed/log')
+file = open('/home/rafael/mestrado/distributed/results/mydyn.26914276.comet-33-11.out')
 content = file.read()
 lines = content.split('\n')
 lines = [line for line in lines if len(line) >= 1]
@@ -53,7 +53,7 @@ def list_loads(results):
     return loads
 
 
-def gen_rt_table(type, results):
+def gen_rt_table(type, results, op=median):
     results = results[type]
     algs = list_algs(results)
     loads = list_loads(results)
@@ -72,12 +72,12 @@ def gen_rt_table(type, results):
         table += str(load) + ' '
         for alg in static_algs:
             try:
-                table += str(median(results[('s', alg)][load]['rt'])) + ' '
+                table += str(op(results[('s', alg)][load]['rt'])) + ' '
             except KeyError:
                 table += '* '
         for alg in dyn_algs:
             try:
-                table += str(median(results[alg][load]['rt'])) + ' '
+                table += str(op(results[alg][load]['rt'])) + ' '
             except KeyError:
                 table += '* '
         table += '\n'
