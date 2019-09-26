@@ -143,6 +143,8 @@ void HybridSearchStrategy::gpu_process(std::mutex* cleanup_mutex) {
 			}
 		}
 	}
+	
+	while (qm->gpu_loading);
 
 //	std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
 //	for (int j = 0; j < qm->bases_exchanged; j++) {
