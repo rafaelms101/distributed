@@ -23,7 +23,7 @@ train: train.o $(FAISS_LIB)
 	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 simple: readSplittedIndex.o simple.o $(FAISS_LIB)
-	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
+	mpic++ $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
 
 recall: recall.o $(FAISS_LIB)
 		$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
