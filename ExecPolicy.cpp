@@ -360,12 +360,15 @@ int GeorgeExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 			return pdGPU.min_block;
 		}
 		
+		if (nq + processed == cfg.test_length) return num_blocks;
+		
 		double time_to_max = (pdGPU.min_block - num_blocks) * buffer.block_interval();
 		
 		double extra_time_wait = num_blocks * time_to_max;
 		double extra_time_execute = (pdGPU.times[num_blocks] - time_to_max) * (pdGPU.min_block - num_blocks);
 		
 		if (extra_time_execute < extra_time_wait) {
+			processed += nq;
 			return num_blocks;
 		} else {
 			buffer.waitForData(num_blocks + 1);
