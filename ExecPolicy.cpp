@@ -347,6 +347,32 @@ int QueueExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	}
 }
 
+int GeorgeExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	buffer.waitForData(1);
+
+	while (true) {
+		//deciding between executing what we have or wait one extra block
+		int num_blocks = buffer.entries();
+		int nq = num_blocks * cfg.block_size;
+
+		if (num_blocks >= pdGPU.min_block) {
+			processed += pdGPU.min_block * cfg.block_size;
+			return pdGPU.min_block;
+		}
+		
+		double time_to_max = (pdGPU.min_block - num_blocks) * buffer.block_interval();
+		
+		double extra_time_wait = num_blocks * time_to_max;
+		double extra_time_execute = (pdGPU.times[num_blocks] - time_to_max) * (pdGPU.min_block - num_blocks);
+		
+		if (extra_time_execute < extra_time_wait) {
+			return num_blocks;
+		} else {
+			buffer.waitForData(num_blocks + 1);
+		}
+	}
+}
+
 int QueueMaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 
