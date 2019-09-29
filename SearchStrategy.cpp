@@ -149,19 +149,20 @@ void HybridSearchStrategy::gpu_process(std::mutex* cleanup_mutex) {
 		usleep(1 * 1000 * 1000);
 	}
 
-//	std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
-//	for (int j = 0; j < qm->bases_exchanged; j++) {
-//		for (int i = 0; i < qm->_queues.size(); i++) {
-//			if (i == qm->switches[j].first) {
-//				std::printf("<");
-//			} else if (i == qm->switches[j].second) {
-//				std::printf(">");
-//			}
-//
-//			std::printf("%ld ", qm->log[j][i]);
-//		}
-//		std::printf("\n");
-//	}
+	std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
+	for (int j = 0; j < qm->bases_exchanged; j++) {
+		std::printf("b: ");
+		for (int i = 0; i < qm->_queues.size(); i++) {
+			if (i == qm->switches[j].first) {
+				std::printf("<");
+			} else if (i == qm->switches[j].second) {
+				std::printf(">");
+			}
+
+			std::printf("%ld ", qm->log[j][i]);
+		}
+		std::printf("\n");
+	}
 }
 
 void HybridSearchStrategy::cpu_process(std::mutex* cleanup_mutex) {
@@ -344,21 +345,22 @@ void GpuOnlySearchStrategy::start_search_process() {
 	deb("search_gpu finished");
 
 	merge_thread.join();
-//
-//	std::printf("bases exchanged: %ld\n", bases_exchanged);
-//
-//	for (int j = 0; j < bases_exchanged; j++) {
-//		for (int i = 0; i < proc_ids.size(); i++) {
-//			if (i == switches[j].first) {
-//				std::printf("<");
-//			} else if (i == switches[j].second) {
-//				std::printf(">");
-//			}
-//
-//			std::printf("%ld ", log[j][i]);
-//		}
-//		std::printf("\n");
-//	}
+
+	std::printf("bases exchanged: %ld\n", bases_exchanged);
+
+	for (int j = 0; j < bases_exchanged; j++) {
+		std::printf("b: ");
+		for (int i = 0; i < proc_ids.size(); i++) {
+			if (i == switches[j].first) {
+				std::printf("<");
+			} else if (i == switches[j].second) {
+				std::printf(">");
+			}
+
+			std::printf("%ld ", log[j][i]);
+		}
+		std::printf("\n");
+	}
 }
 
 void CpuFixedSearchStrategy::cpu_process() {
