@@ -177,6 +177,7 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 			idx++;
 		}
 		
+		if (cfg.request_distribution == RequestDistribution::Variable_Poisson) std::printf("%lf\n", total / interval_size);
 		aggregate_total += total;
 	}
 	
