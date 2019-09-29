@@ -347,6 +347,43 @@ int QueueExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	}
 }
 
+int BestExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	constexpr int lookahead_blocks = 1; 
+	
+	buffer.waitForData(1);
+
+	while (true) {
+		//deciding between executing what we have or wait one extra block
+		int num_blocks = buffer.entries();
+		int nq = num_blocks * cfg.block_size;
+
+		if (num_blocks >= pdGPU.min_block) {
+			processed += pdGPU.min_block * cfg.block_size;
+			return pdGPU.min_block;
+		}
+
+		if (nq + processed == cfg.test_length) return num_blocks;
+
+		//case 1: execute right now
+		auto queries_after_execute = pdGPU.times[num_blocks] / buffer.block_interval();
+		auto time_after_execute = pdGPU.times[num_blocks];
+
+		//case 2: wait for one more block
+		auto queries_after_wait = pdGPU.times[num_blocks + lookahead_blocks] / buffer.block_interval();
+		auto time_after_wait = lookahead_blocks * buffer.block_interval() + pdGPU.times[num_blocks + lookahead_blocks]; 
+
+		double increase_rate_execute = (queries_after_execute - nq) / time_after_execute;
+		double increase_rate_wait = (queries_after_wait - nq) / time_after_wait;
+
+		if (increase_rate_execute <= increase_rate_wait) {
+			processed += nq;
+			return num_blocks;
+		}
+
+		buffer.waitForData(num_blocks + 1);
+	}
+}
+
 int GeorgeExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 

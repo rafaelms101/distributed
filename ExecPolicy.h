@@ -127,6 +127,15 @@ public:
 	int numBlocksRequired(Buffer& buffer, Config& cfg);
 };
 
+class BestExecPolicy : public DynamicExecPolicy {
+private:
+	int processed = 0;
+	
+public:
+	using DynamicExecPolicy::DynamicExecPolicy;
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
+};
+
 class GeorgeExecPolicy : public DynamicExecPolicy {
 private:
 	int processed = 0;
