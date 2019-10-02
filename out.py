@@ -22,6 +22,10 @@ for line in it:
     if load not in results[dist][alg]:
         results[dist][alg][load] = {'rt': []}
 
+    if dist == 'p':
+        for i in range(100):
+            next(it)
+
     response_time = float(next(it)[0])
     next(it)
 
