@@ -18,9 +18,9 @@ do
     for block_size in {25..200..25}
     do
       echo "s c $load $block_size"
-      $cmd -n 3 ./sharded s c $load $block_size 2
+      $cmd -n 3 ./sharded s c $load $block_size cpu 2
       echo "s p $load $block_size"
-      $cmd -n 3 ./sharded s p $load $block_size 2
+      $cmd -n 3 ./sharded s p $load $block_size cpu 2
     done
   done
 done
