@@ -36,7 +36,7 @@ std::pair<int, int> DynamicExecPolicy::longest_contiguous_region(double min, dou
 }
 
 void DynamicExecPolicy::setup() {
-	std::vector<double> times(load_prof_times(true, 0, cfg));
+	std::vector<double> times(load_prof_times(true, cfg));
 	std::vector<double> time_per_block(times.size());
 
 	for (int i = 1; i < times.size(); i++) {

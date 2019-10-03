@@ -249,7 +249,7 @@ static double* query_start_time(double (*next_interval)(double), double param, C
 void generator(int nshards, Config& cfg) {
 	double* query_start;
 	
-	auto times = load_prof_times(true, 0, cfg);
+	auto times = load_prof_times(true, cfg);
 	
 	double best = 100000;
 	for (int i = 1; i < times.size(); i++) {

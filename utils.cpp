@@ -108,14 +108,14 @@ void load_bench_data(bool cpu, long& best) {
 	load_bench_data(cpu, best, tmp);
 }
 
-std::vector<double> load_prof_times(bool gpu, int shard_number, Config& cfg) {
+std::vector<double> load_prof_times(bool gpu, Config& cfg) {
 	char file_path[100];
-	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 	std::ifstream file;
 	file.open(file_path);
 
 	if (!file.good()) {
-		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d_%d doesn't exist\n", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d doesn't exist\n", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 		std::exit(-1);
 	}
 
