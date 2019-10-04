@@ -280,6 +280,21 @@ void GpuOnlySearchStrategy::setup() {
 		all_distance_buffers.push_back(new Buffer(sizeof(float) * cfg.k, 1000000));
 		proc_ids.push_back(0);
 	}
+	
+	can_switch_cpu = gpu_indexes.size() % cpu_bases.size();
+	can_switch_gpu = 0;
+}
+
+void GpuOnlySearchStrategy::transferProcess(int gpu_index, int cpu_index) {
+	gpu_indexes[gpu_index]->copyFrom(cpu_bases[cpu_index]);
+	
+	reverseBaseMap[gpu_index] = cpu_index;
+	baseMap[cpu_index] = gpu_index;
+	
+	can_switch_cpu = (can_switch_cpu + 1) % cpu_bases.size();
+	can_switch_gpu = (can_switch_gpu + 1) % gpu_indexes.size();
+	
+	loading = false;
 }
 
 void GpuOnlySearchStrategy::start_search_process() {
@@ -297,21 +312,25 @@ void GpuOnlySearchStrategy::start_search_process() {
 		for (int i = 0; i < cpu_bases.size(); i++) {
 			long buffer_idx = proc_ids[i] - buffer_start_id;
 			long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
-			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
-
-			if (available_queries >= 1 && baseMap[i] == -1) {
-				switches.push_back(std::make_pair(reverseBaseMap[0], i));
+			
+			if (available_queries == 0 || baseMap[i] == -1 && loading) continue;
+			
+			if (baseMap[i] == -1) {
+				switches.push_back(std::make_pair(reverseBaseMap[can_switch_gpu], can_switch_cpu));
 				for (int i = 0; i < proc_ids.size(); i++) {
 					log[bases_exchanged][i] = query_buffer.entries() * cfg.block_size - (proc_ids[i] - buffer_start_id);
 				}
-
-				gpu_indexes[0]->copyFrom(cpu_bases[i]);
-				baseMap[i] = 0;
-				baseMap[reverseBaseMap[0]] = -1;
-				reverseBaseMap[0] = i;
 				
+				loading = true;
+				baseMap[reverseBaseMap[can_switch_gpu]] = -1;
+				reverseBaseMap[can_switch_gpu] = -1;
+				std::thread thread(&GpuOnlySearchStrategy::transferProcess, this, can_switch_gpu, can_switch_cpu);
+				thread.detach();
 				bases_exchanged++;
+				continue;
 			}
+			
+			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
 
 			while (available_queries >= 1) {
 				long nqueries = std::min(available_queries, best_query_point_gpu);

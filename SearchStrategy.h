@@ -76,8 +76,12 @@ class GpuOnlySearchStrategy : public SearchStrategy {
 	std::vector<long> proc_ids;
 	std::vector<faiss::gpu::GpuIndexIVFPQ*> gpu_indexes;
 	long buffer_start_id = 0;
+	bool loading = false;
+	int can_switch_cpu;
+	int can_switch_gpu;
 	
 	void merger();
+	void transferProcess(int gpu_index, int cpu_index);
 	
 public:
 	using SearchStrategy::SearchStrategy;
