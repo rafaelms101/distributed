@@ -313,7 +313,7 @@ void GpuOnlySearchStrategy::start_search_process() {
 			long buffer_idx = proc_ids[i] - buffer_start_id;
 			long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
 			
-			if (available_queries == 0 || baseMap[i] == -1 && loading) continue;
+			if (available_queries == 0 || baseMap[i] == -1 && (loading || can_switch_cpu != i)) continue;
 			
 			if (baseMap[i] == -1) {
 				switches.push_back(std::make_pair(reverseBaseMap[can_switch_gpu], can_switch_cpu));
