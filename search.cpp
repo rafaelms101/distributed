@@ -90,10 +90,9 @@ void search(int shard, int nshards, Config& cfg) {
 	res.setTempMemory(1500 * 1024 * 1024);
 	
 	SearchStrategy* strategy;
-	
-	float shard_size = 1.0 / nshards;
-	float base_start = shard * shard_size;
-	float base_end = base_start + shard_size;
+
+	float base_start = 0;
+	float base_end = 1;
 	
 	if (cfg.search_algorithm == SearchAlgorithm::Cpu) {
 		strategy = new CpuOnlySearchStrategy(query_buffer, distance_buffer, label_buffer, base_start, base_end);
