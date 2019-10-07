@@ -54,6 +54,12 @@ void HybridPolicy::setup() {
 	}
 	
 	max_blocks = minBlock + cpu_blocks(timesCPU, timesGPU, minBlock);
+	
+	gpuToCpu.push_back(0);
+	
+	for (int i = 1; i <= max_blocks; i++) {
+		gpuToCpu.push_back(cpu_blocks(timesCPU, timesGPU, i));
+	}
 }
 
 int HybridPolicy::bsearch(std::vector<double>& times, double val) {
@@ -79,7 +85,7 @@ int HybridPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	int num_blocks = buffer.entries();
 	num_blocks = std::min(num_blocks, max_blocks);
 	
-	blocks_cpu = cpu_blocks(timesCPU, timesGPU, num_blocks);
+	blocks_cpu = gpuToCpu[num_blocks];
 	
 	return num_blocks;
 }
