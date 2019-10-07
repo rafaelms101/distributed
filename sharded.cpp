@@ -156,7 +156,7 @@ int main(int argc, char* argv[]) {
     } else if (world_rank == 0) {
     	aggregator(world_size - 2, ptype, cfg);
     } else {
-    	search(ptype, cfg);
+    	search(ptype, shard, cfg);
     }
     
     // Finalize the MPI environment.

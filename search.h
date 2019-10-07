@@ -4,6 +4,6 @@
 #include "utils.h"
 #include "config.h"
 
-void search(ProcType ptype, Config& cfg);
+void search(ProcType ptype, int shard, Config& cfg);
 
 #endif /* SEARCH_H_ */
