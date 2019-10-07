@@ -10,11 +10,7 @@ int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	return num_blocks;
 }
 
-void HybridPolicy::setup() {
-	timesCPU = BenchExecPolicy::load_prof_times(false, cfg);
-	timesGPU = BenchExecPolicy::load_prof_times(true, cfg);
-}
-
+//TODO: add this to the HybridPolicy class
 static int cpu_blocks(std::vector<double>& cpu, std::vector<double>& gpu, int nb) {
 	int nbgpu = 0;
 	int nbcpu = nb;
@@ -39,6 +35,27 @@ static int cpu_blocks(std::vector<double>& cpu, std::vector<double>& gpu, int nb
 	return bestnb;
 }
 
+//TODO: there is a lot of duplication with the setup of DynamicExecPolicy
+void HybridPolicy::setup() {
+	timesCPU = BenchExecPolicy::load_prof_times(false, cfg);
+	timesGPU = BenchExecPolicy::load_prof_times(true, cfg);
+	
+	std::vector<double> time_per_block(timesGPU.size());
+
+	for (int i = 1; i < timesGPU.size(); i++) {
+		time_per_block[i] = timesGPU[i] / i;
+	}
+
+	double tolerance = 0.1;
+	int minBlock = 1;
+
+	for (int nb = 1; nb < timesGPU.size(); nb++) {
+		if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
+	}
+	
+	max_blocks = minBlock + cpu_blocks(timesCPU, timesGPU, minBlock);
+}
+
 int HybridPolicy::bsearch(std::vector<double>& times, double val) {
 	int begin = 0;
 	int end = times.size() - 1;
@@ -60,7 +77,7 @@ int HybridPolicy::bsearch(std::vector<double>& times, double val) {
 int HybridPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	buffer.waitForData(1);
 	int num_blocks = buffer.entries();
-	num_blocks = std::min(num_blocks, 100);
+	num_blocks = std::min(num_blocks, max_blocks);
 	
 	blocks_cpu = cpu_blocks(timesCPU, timesGPU, num_blocks);
 	
