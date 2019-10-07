@@ -78,6 +78,8 @@ static void comm_handler(Buffer* query_buffer, Buffer* distance_buffer, Buffer* 
 void search(int shard, int nshards, Config& cfg) {
 	deb("search called");
 	
+	cfg.shard = shard;
+	
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	Buffer query_buffer(block_size_in_bytes, 100 * 1024 * 1024 / block_size_in_bytes); //100 MB
 	

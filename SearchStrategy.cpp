@@ -269,7 +269,7 @@ void GpuOnlySearchStrategy::setup() {
 		cpu_bases.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
 		
 		if (i < cfg.gpu_pieces) {
-			gpu_indexes.push_back(static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, 0, cpu_bases[i], nullptr)));
+			gpu_indexes.push_back(static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % 2, cpu_bases[i], nullptr)));
 			baseMap.push_back(i);
 			reverseBaseMap.push_back(i);
 		} else {
@@ -508,7 +508,7 @@ void CpuFixedSearchStrategy::setup() {
 		proc_ids.push_back(0);
 	}
 
-	gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, 0, all_gpu_bases[0], nullptr));
+	gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % 2, all_gpu_bases[0], nullptr));
 }
 
 void CpuFixedSearchStrategy::start_search_process() {
@@ -531,7 +531,7 @@ void FixedSearchStrategy::setup() {
 	cpu_proc_id = 0;
 
 	auto tmp_base = load_index(base_start + total_share * cpu_share, base_start + total_share, cfg);
-	gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, 0, tmp_base, nullptr));
+	gpu_index = static_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % 2, tmp_base, nullptr));
 	all_label_buffers.push_back(new Buffer(sizeof(faiss::Index::idx_t) * cfg.k, 1000000));
 	all_distance_buffers.push_back(new Buffer(sizeof(float) * cfg.k, 1000000));
 	gpu_proc_id = 0;

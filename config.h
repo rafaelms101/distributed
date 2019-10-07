@@ -25,8 +25,10 @@ struct Config {
 	const int k = 10;
 	const int nprobe = 16;
 	const int block_size = 5;
-	const int test_length = 10000; //how many queries will be sent in total
-	const int eval_length = 10000; //of the sent queries, how many will be used to compute the average response time
+	const int test_length = 100000; //how many queries will be sent in total
+	const int eval_length = 100000; //of the sent queries, how many will be used to compute the average response time
+	
+	int shard;
 	
 	
 	const int poisson_intervals = 100;
