@@ -12,11 +12,6 @@ int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 
 //TODO: add this to the HybridPolicy class
 static int cpu_blocks(std::vector<double>& cpu, std::vector<double>& gpu, int nb) {
-	if (nb >= gpu.size()) {
-		auto nCPU = cpu_blocks(cpu, gpu, gpu.size() - 1);
-		return int(double(nCPU) * nb / gpu.size());
-	}
-	
 	int nbgpu = nb;
 	int nbcpu = 0;
 	
@@ -127,7 +122,9 @@ int HybridCompositePolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 }
 
 void HybridCompositePolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
-	auto nq_cpu = nbToCpu[nq / cfg.block_size] * cfg.block_size;
+	int nb = nq / cfg.block_size;
+	
+	auto nq_cpu = (nb < timesGPU.size() ? nbToCpu[nb] : (nbToCpu[timesGPU.size() - 1] * nb / timesGPU.size())) * cfg.block_size;
 	auto nq_gpu = nq - nq_cpu;
 
 	deb("gpu=%d, cpu=%d", nq_gpu, nq_cpu);
