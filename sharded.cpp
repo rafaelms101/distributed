@@ -28,7 +28,7 @@ static void process_query_distribution(char** argv) {
 }
 
 static ProcType handle_parameters(int argc, char* argv[], int shard) {
-	std::string usage = "./sharded b | d <c|p> <query_interval> <min|max|q|g|gmin|c> <seed> | s <c|p> <query_interval> <queries_per_block> <gpu|cpu|h gpu_ratio> <seed>";
+	std::string usage = "./sharded b | d <c|p> <query_interval> <min|max|q|g|gmin|c|...> <seed> | s <c|p> <query_interval> <queries_per_block> <gpu|cpu|h> <seed>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -82,7 +82,7 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 		
 		srand(std::atoi(argv[5]));
 	} else if (ptype == ProcType::Static) {
-		if (argc < 7) {
+		if (argc != 7) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
@@ -98,27 +98,10 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 		bool gpu = ! std::strcmp(argv[5], "gpu");
 		bool hybrid = ! std::strcmp(argv[5], "h");
 		
-		if (hybrid) {
-			if (argc != 8) {
-				std::printf("Wrong arguments.\n%s\n", usage.c_str());
-				std::exit(-1);
-			}
-			
-			double gpu_ratio = std::atof(argv[6]);
-			
-			cfg.exec_policy = new HybridBatch(gpu_ratio, cfg.processing_size);
-			srand(std::atoi(argv[7]));
-		} else {
-			if (argc != 7) {
-				std::printf("Wrong arguments.\n%s\n", usage.c_str());
-				std::exit(-1);
-			}
-			
-			cfg.exec_policy = new StaticExecPolicy(gpu, cfg.processing_size);
-			srand(std::atoi(argv[6]));
-		}
-		
-		
+		if (hybrid) cfg.exec_policy = new HybridBatch(cfg.processing_size);
+		else cfg.exec_policy = new StaticExecPolicy(gpu, cfg.processing_size);
+
+		srand(std::atoi(argv[6]));
 	} else if (ptype == ProcType::Bench) {
 		cfg.exec_policy = new BenchExecPolicy();
 		cfg.test_length = cfg.eval_length = BENCH_SIZE * BENCH_REPEATS;

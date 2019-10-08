@@ -139,13 +139,20 @@ void HybridCompositePolicy::process_buffer(faiss::Index* cpu_index, faiss::Index
 	buffer.consume(nq / cfg.block_size);
 }
 
+HybridBatch::HybridBatch(int _block_size) : block_size(_block_size) {
+	auto timesCPU = BenchExecPolicy::load_prof_times(false, cfg);
+	auto timesGPU = BenchExecPolicy::load_prof_times(true, cfg);
+
+	nbCPU = cpu_blocks(timesCPU, timesGPU, block_size);
+}
+
 int HybridBatch::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	return procSize / cfg.block_size;
+	return block_size;
 }
 
 void HybridBatch::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
-	auto nq_gpu = int(nq * gpuRatio);
-	auto nq_cpu = nq - nq_gpu;
+	auto nq_cpu = nbCPU * cfg.block_size;
+	auto nq_gpu = nq - nq_cpu;
 	
 	deb("gpu=%d, cpu=%d", nq_gpu, nq_cpu);
 
