@@ -12,6 +12,11 @@ int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 
 //TODO: add this to the HybridPolicy class
 static int cpu_blocks(std::vector<double>& cpu, std::vector<double>& gpu, int nb) {
+	if (nb >= gpu.size()) {
+		auto nCPU = cpu_blocks(cpu, gpu, gpu.size() - 1);
+		return int(double(nCPU) * nb / gpu.size());
+	}
+	
 	int nbgpu = nb;
 	int nbcpu = 0;
 	
