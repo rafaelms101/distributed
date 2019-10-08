@@ -47,7 +47,7 @@ public:
 class HybridPolicy : public ExecPolicy {
 	std::vector<double> timesCPU;
 	std::vector<double> timesGPU;
-	std::vector<int> gpuToCpu;
+	std::vector<int> nbToCpu;
 	int max_blocks = 0;
 	
 	int bsearch(std::vector<double>& times, double val);
@@ -58,6 +58,20 @@ public:
 	int numBlocksRequired(Buffer& buffer, Config& cfg);
 	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
 	void cleanup(Config& cfg) { }
+};
+
+class HybridCompositePolicy : public ExecPolicy {
+	std::vector<double> timesCPU;
+	std::vector<double> timesGPU;
+	std::vector<int> nbToCpu;
+	ExecPolicy* policy; 
+	
+public:
+	HybridCompositePolicy(ExecPolicy* _policy) : policy(_policy) {}
+	void setup();
+	int numBlocksRequired(Buffer& buffer, Config& cfg);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	void cleanup(Config& cfg) { policy->cleanup(cfg); }	
 };
 
 class StaticExecPolicy : public ExecPolicy {

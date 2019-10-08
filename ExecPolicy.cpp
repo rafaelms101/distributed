@@ -52,10 +52,10 @@ void HybridPolicy::setup() {
 	
 	max_blocks = minBlock + cpu_blocks(timesCPU, timesGPU, minBlock);
 	
-	gpuToCpu.push_back(0);
+	nbToCpu.push_back(0);
 	
 	for (int i = 1; i <= max_blocks; i++) {
-		gpuToCpu.push_back(cpu_blocks(timesCPU, timesGPU, i));
+		nbToCpu.push_back(cpu_blocks(timesCPU, timesGPU, i));
 	}
 }
 
@@ -91,7 +91,7 @@ static bool gpu_search(faiss::Index* gpu_index, int nq_gpu, float* query_buffer,
 }
 
 void HybridPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
-	auto nq_cpu = gpuToCpu[nq / cfg.block_size] * cfg.block_size;
+	auto nq_cpu = nbToCpu[nq / cfg.block_size] * cfg.block_size;
 	auto nq_gpu = nq - nq_cpu;
 	
 	deb("gpu=%d, cpu=%d", nq_gpu, nq_cpu);
@@ -103,6 +103,36 @@ void HybridPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_ind
 	buffer.consume(nq / cfg.block_size);
 }
 
+void HybridCompositePolicy::setup() {
+	timesCPU = BenchExecPolicy::load_prof_times(false, cfg);
+	timesGPU = BenchExecPolicy::load_prof_times(true, cfg);
+
+	nbToCpu.push_back(0);
+	
+	for (int i = 1; i <= timesGPU.size(); i++) {
+		nbToCpu.push_back(cpu_blocks(timesCPU, timesGPU, i));
+	}
+	
+	policy->setup(); 
+}
+
+//TODO: HybridCompositePolicy is basically a copy of HybridPolicy. Maybe merge the two?
+int HybridCompositePolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	return policy->numBlocksRequired(buffer, cfg);
+}
+
+void HybridCompositePolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	auto nq_cpu = nbToCpu[nq / cfg.block_size] * cfg.block_size;
+	auto nq_gpu = nq - nq_cpu;
+
+	deb("gpu=%d, cpu=%d", nq_gpu, nq_cpu);
+
+	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
+	std::future<bool> fut = std::async(std::launch::async, gpu_search, gpu_index, nq_gpu, query_buffer, I, D);
+	if (nq_cpu > 0) cpu_index->search(nq_cpu, query_buffer + nq_gpu * cfg.d, cfg.k, D + nq_gpu * cfg.k, I + nq_gpu * cfg.k);
+	bool ret = fut.get();
+	buffer.consume(nq / cfg.block_size);
+}
 
 int HybridBatch::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	return procSize / cfg.block_size;
