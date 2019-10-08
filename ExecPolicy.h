@@ -48,8 +48,6 @@ class HybridPolicy : public ExecPolicy {
 	std::vector<double> timesCPU;
 	std::vector<double> timesGPU;
 	std::vector<int> gpuToCpu;
-	int blocks_cpu = 0;
-	int blocks_gpu = 0;
 	int max_blocks = 0;
 	
 	int bsearch(std::vector<double>& times, double val);

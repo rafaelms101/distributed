@@ -85,8 +85,6 @@ int HybridPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	int num_blocks = buffer.entries();
 	num_blocks = std::min(num_blocks, max_blocks);
 	
-	blocks_cpu = gpuToCpu[num_blocks];
-	
 	return num_blocks;
 }
 
@@ -96,7 +94,7 @@ static bool gpu_search(faiss::Index* gpu_index, int nq_gpu, float* query_buffer,
 }
 
 void HybridPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
-	auto nq_cpu = blocks_cpu * cfg.block_size;
+	auto nq_cpu = gpuToCpu[nq / cfg.block_size] * cfg.block_size;
 	auto nq_gpu = nq - nq_cpu;
 	
 	deb("gpu=%d, cpu=%d", nq_gpu, nq_cpu);
