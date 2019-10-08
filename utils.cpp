@@ -62,3 +62,35 @@ double poisson_interval(double mean_interval) {
 	ret = std::max(ret, mean_interval / 5);
 	return ret;
 }
+
+std::pair<int, int> longest_contiguous_region(double tolerance, std::vector<double>& time_per_block) {
+	int min_block = 1;
+
+	for (int nb = 1; nb < time_per_block.size(); nb++) {
+		if (time_per_block[nb] < time_per_block[min_block]) min_block = nb;
+	}
+	
+	double min = time_per_block[min_block];
+	int start, bestStart, bestEnd;
+	int bestLength = 0;
+	int length = 0;
+
+	double threshold = min * (1 + tolerance);
+
+	for (int i = 1; i < time_per_block.size(); i++) {
+		if (time_per_block[i] <= threshold) {
+			length++;
+
+			if (length > bestLength) {
+				bestStart = start;
+				bestEnd = i;
+				bestLength = length;
+			}
+		} else {
+			start = i + 1;
+			length = 0;
+		}
+	}
+
+	return std::pair<int, int>(bestStart, bestEnd);
+}

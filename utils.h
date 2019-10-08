@@ -23,5 +23,6 @@ double now();
 int *ivecs_read(const char *fname, int *d_out, int *n_out);
 float *fvecs_read (const char *fname, int *d_out, int *n_out);
 double poisson_interval(double mean_interval);
+std::pair<int, int> longest_contiguous_region(double tolerance, std::vector<double>& time_per_block);
 
 #endif /* UTILS_H_ */

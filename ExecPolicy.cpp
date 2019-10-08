@@ -12,24 +12,24 @@ int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 
 //TODO: add this to the HybridPolicy class
 static int cpu_blocks(std::vector<double>& cpu, std::vector<double>& gpu, int nb) {
-	int nbgpu = 0;
-	int nbcpu = nb;
+	int nbgpu = nb;
+	int nbcpu = 0;
 	
-	double best_time = cpu[nbcpu];
-	int bestnb = nbcpu;
+	double best_time = gpu[nbgpu];
+	int bestnb = 0;
 	
-	nbgpu++;
-	nbcpu--;
+	nbgpu--;
+	nbcpu++;
 	
-	while (nbcpu >= 0) {
+	while (nbcpu < cpu.size()) {
 		double time = std::max(cpu[nbcpu], gpu[nbgpu]);
 		if (time < best_time) {
 			best_time = time;
 			bestnb = nbcpu;
 		}
 		
-		nbgpu++;
-		nbcpu--;
+		nbgpu--;
+		nbcpu++;
 	}
 	
 	return bestnb;
@@ -45,13 +45,10 @@ void HybridPolicy::setup() {
 	for (int i = 1; i < timesGPU.size(); i++) {
 		time_per_block[i] = timesGPU[i] / i;
 	}
-
+	
 	double tolerance = 0.1;
-	int minBlock = 1;
-
-	for (int nb = 1; nb < timesGPU.size(); nb++) {
-		if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
-	}
+	std::pair<int, int> limits = longest_contiguous_region(tolerance, time_per_block);
+	int minBlock = limits.first;
 	
 	max_blocks = minBlock + cpu_blocks(timesCPU, timesGPU, minBlock);
 	
@@ -242,31 +239,6 @@ void StaticExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu
 	buffer.consume(nq / cfg.block_size);
 }
 
-std::pair<int, int> DynamicExecPolicy::longest_contiguous_region(double min, double tolerance, std::vector<double>& time_per_block) {
-	int start, bestStart, bestEnd;
-	int bestLength = 0;
-	int length = 0;
-
-	double threshold = min * (1 + tolerance);
-
-	for (int i = 1; i < time_per_block.size(); i++) {
-		if (time_per_block[i] <= threshold) {
-			length++;
-
-			if (length > bestLength) {
-				bestStart = start;
-				bestEnd = i;
-				bestLength = length;
-			}
-		} else {
-			start = i + 1;
-			length = 0;
-		}
-	}
-
-	return std::pair<int, int>(bestStart, bestEnd);
-}
-
 void DynamicExecPolicy::setup() {
 	std::vector<double> times(BenchExecPolicy::load_prof_times(true, cfg));
 	std::vector<double> time_per_block(times.size());
@@ -276,13 +248,8 @@ void DynamicExecPolicy::setup() {
 	}
 
 	double tolerance = 0.1;
-	int minBlock = 1;
 
-	for (int nb = 1; nb < times.size(); nb++) {
-		if (time_per_block[nb] < time_per_block[minBlock]) minBlock = nb;
-	}
-
-	std::pair<int, int> limits = longest_contiguous_region(time_per_block[minBlock], tolerance, time_per_block);
+	std::pair<int, int> limits = longest_contiguous_region(tolerance, time_per_block);
 	pdGPU.min_block = limits.first;
 	pdGPU.max_block = limits.second;
 

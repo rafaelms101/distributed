@@ -97,9 +97,6 @@ class DynamicExecPolicy : public GPUPolicy {
 protected:
 	ProfileData pdGPU;
 	
-private:
-	std::pair<int, int> longest_contiguous_region(double min, double tolerance, std::vector<double>& time_per_block);
-	
 public:
 	DynamicExecPolicy() {} 
 	void setup();
