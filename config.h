@@ -48,6 +48,8 @@ struct Config {
 	ExecPolicy* cpu_exec_policy = nullptr;
 	ExecPolicy* gpu_exec_policy = nullptr;
 	
+	int gpu_test_length;
+	
 	bool bench_cpu = false;
 };
 

@@ -149,6 +149,7 @@ int main(int argc, char* argv[]) {
     } else {
     	cfg.cpu_exec_policy = new CPUGreedyPolicy();
     	int blocks_gpu = std::nearbyint(double(cfg.gpu_throughput) / cfg.cpu_throughput);
+    	cfg.gpu_test_length = blocks_gpu * cfg.block_size;
     	search(blocks_gpu, ptype, shard, cfg);
     }
     

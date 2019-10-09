@@ -424,7 +424,7 @@ int GeorgeExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 			return pdGPU.min_block;
 		}
 		
-		if (nq + processed == cfg.test_length) return num_blocks;
+		if (nq + processed == cfg.gpu_test_length) return num_blocks;
 		
 		double time_to_max = (pdGPU.min_block - num_blocks) * buffer.block_interval();
 		
