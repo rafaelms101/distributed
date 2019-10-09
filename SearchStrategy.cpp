@@ -314,7 +314,6 @@ void GpuOnlySearchStrategy::start_search_process() {
 				reverseBaseMap[0] = i;
 				baseMap[i] = 0;
 				bases_exchanged++;
-				continue;
 			}
 			
 			auto buffer_ptr = (float*) (query_buffer.peekFront()) + buffer_idx * cfg.d;
