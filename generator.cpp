@@ -229,7 +229,7 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 		}
 		deb("best interval: %lf", best);
 		
-		double query_interval = best / cfg.query_load;
+		double query_interval = cfg.query_load > 0 ? best / cfg.query_load : 0;
 		deb("interval: %lf", query_interval);
 		
 		
