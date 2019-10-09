@@ -149,19 +149,21 @@ void HybridSearchStrategy::gpu_process(std::mutex* cleanup_mutex) {
 		usleep(1 * 1000 * 1000);
 	}
 
-	std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
-	for (int j = 0; j < qm->bases_exchanged; j++) {
-		std::printf("b: ");
-		for (int i = 0; i < qm->_queues.size(); i++) {
-			if (i == qm->switches[j].first) {
-				std::printf("<");
-			} else if (i == qm->switches[j].second) {
-				std::printf(">");
-			}
+	if (cfg.shard == 0) {
+		std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
+		for (int j = 0; j < qm->bases_exchanged; j++) {
+			std::printf("b: ");
+			for (int i = 0; i < qm->_queues.size(); i++) {
+				if (i == qm->switches[j].first) {
+					std::printf("<");
+				} else if (i == qm->switches[j].second) {
+					std::printf(">");
+				}
 
-			std::printf("%ld ", qm->log[j][i]);
+				std::printf("%ld ", qm->log[j][i]);
+			}
+			std::printf("\n");
 		}
-		std::printf("\n");
 	}
 }
 
@@ -280,21 +282,6 @@ void GpuOnlySearchStrategy::setup() {
 		all_distance_buffers.push_back(new Buffer(sizeof(float) * cfg.k, 1000000));
 		proc_ids.push_back(0);
 	}
-	
-	can_switch_cpu = gpu_indexes.size() % cpu_bases.size();
-	can_switch_gpu = 0;
-}
-
-void GpuOnlySearchStrategy::transferProcess(int gpu_index, int cpu_index) {
-	gpu_indexes[gpu_index]->copyFrom(cpu_bases[cpu_index]);
-	
-	reverseBaseMap[gpu_index] = cpu_index;
-	baseMap[cpu_index] = gpu_index;
-	
-	can_switch_cpu = (can_switch_cpu + 1) % cpu_bases.size();
-	can_switch_gpu = (can_switch_gpu + 1) % gpu_indexes.size();
-	
-	loading = false;
 }
 
 void GpuOnlySearchStrategy::start_search_process() {
@@ -313,19 +300,19 @@ void GpuOnlySearchStrategy::start_search_process() {
 			long buffer_idx = proc_ids[i] - buffer_start_id;
 			long available_queries = query_buffer.entries() * cfg.block_size - buffer_idx;
 			
-			if (available_queries == 0 || baseMap[i] == -1 && (loading || can_switch_cpu != i)) continue;
+			if (available_queries == 0) continue;
 			
 			if (baseMap[i] == -1) {
-				switches.push_back(std::make_pair(reverseBaseMap[can_switch_gpu], can_switch_cpu));
+				switches.push_back(std::make_pair(reverseBaseMap[0], i));
 				for (int i = 0; i < proc_ids.size(); i++) {
 					log[bases_exchanged][i] = query_buffer.entries() * cfg.block_size - (proc_ids[i] - buffer_start_id);
 				}
 				
-				loading = true;
-				baseMap[reverseBaseMap[can_switch_gpu]] = -1;
-				reverseBaseMap[can_switch_gpu] = -1;
-				std::thread thread(&GpuOnlySearchStrategy::transferProcess, this, can_switch_gpu, can_switch_cpu);
-				thread.detach();
+				baseMap[reverseBaseMap[0]] = -1;
+				reverseBaseMap[0] = -1;
+				gpu_indexes[0]->copyFrom(cpu_bases[i]);
+				reverseBaseMap[0] = i;
+				baseMap[i] = 0;
 				bases_exchanged++;
 				continue;
 			}
@@ -341,8 +328,9 @@ void GpuOnlySearchStrategy::start_search_process() {
 				db->waitForSpace(nqueries);
 
 				deb("searched %ld queries on base %d", nqueries, i);
+				
 				gpu_indexes[baseMap[i]]->search(nqueries, buffer_ptr, cfg.k, (float*) db->peekEnd(), (faiss::Index::idx_t*) lb->peekEnd());
-
+				
 				db->add(nqueries);
 				lb->add(nqueries);
 
@@ -365,20 +353,22 @@ void GpuOnlySearchStrategy::start_search_process() {
 
 	merge_thread.join();
 
-	std::printf("bases exchanged: %ld\n", bases_exchanged);
-
-	for (int j = 0; j < bases_exchanged; j++) {
-		std::printf("b: ");
-		for (int i = 0; i < proc_ids.size(); i++) {
-			if (i == switches[j].first) {
-				std::printf("<");
-			} else if (i == switches[j].second) {
-				std::printf(">");
+	if (cfg.shard == 0) {
+		std::printf("bases exchanged: %ld\n", bases_exchanged);
+	
+		for (int j = 0; j < bases_exchanged; j++) {
+			std::printf("b: ");
+			for (int i = 0; i < proc_ids.size(); i++) {
+				if (i == switches[j].first) {
+					std::printf("<");
+				} else if (i == switches[j].second) {
+					std::printf(">");
+				}
+	
+				std::printf("%ld ", log[j][i]);
 			}
-
-			std::printf("%ld ", log[j][i]);
+			std::printf("\n");
 		}
-		std::printf("\n");
 	}
 }
 
