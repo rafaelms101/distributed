@@ -27,6 +27,9 @@ struct Config {
 	int nprobe = 16;
 	int block_size = 5;
 	int bench_step = block_size;
+	
+	int cpu_throughput;
+	int gpu_throughput;
 
 	
 	// filled elsewhere
@@ -42,7 +45,8 @@ struct Config {
 	int processing_size;
 	bool only_min;
 	
-	ExecPolicy* exec_policy = nullptr;
+	ExecPolicy* cpu_exec_policy = nullptr;
+	ExecPolicy* gpu_exec_policy = nullptr;
 	
 	bool bench_cpu = false;
 };

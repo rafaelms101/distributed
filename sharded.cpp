@@ -28,7 +28,7 @@ static void process_query_distribution(char** argv) {
 }
 
 static ProcType handle_parameters(int argc, char* argv[], int shard) {
-	std::string usage = "./sharded b | d <c|p> <query_interval> <min|max|q|g|gmin|c|...> <seed> | s <c|p> <query_interval> <queries_per_block> <gpu|cpu|h> <seed>";
+	std::string usage = "./sharded b | d <c|p> <query_interval> <min|max|q|g|gmin|c|...> <seed> <gpu_throughput> <cpu_throughput>  | s <c|p> <query_interval> <queries_per_block> <gpu|cpu|h> <seed> <gpu_throughput> <cpu_throughput> ";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -37,7 +37,7 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 
 	ProcType ptype = ProcType::Bench;
 	if (! strcmp("d", argv[1])) ptype = ProcType::Dynamic;
-	else if (! strcmp("b", argv[1])) ptype = ProcType::Bench;
+	else if (! strcmp("b", argv[1])) assert(false);
 	else if (! strcmp("s", argv[1])) ptype = ProcType::Static;
 	else {
 		std::printf("Invalid processing type.Expected b | s | d\n");
@@ -45,7 +45,7 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 	}
 
 	if (ptype == ProcType::Dynamic) {
-		if (argc != 6) {
+		if (argc != 8) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
@@ -54,35 +54,37 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 		
 		if (shard >= 0) {
 			if (! std::strcmp(argv[4], "min")) {
-				cfg.exec_policy = new MinExecPolicy();
+				cfg.gpu_exec_policy = new MinExecPolicy();
 			} else if (! std::strcmp(argv[4], "max")) {
-				cfg.exec_policy = new MaxExecPolicy();
+				cfg.gpu_exec_policy = new MaxExecPolicy();
 			} else if (! std::strcmp(argv[4], "q")) {
-				cfg.exec_policy = new QueueExecPolicy();
+				cfg.gpu_exec_policy = new QueueExecPolicy();
 			} else if (! std::strcmp(argv[4], "gmin")) {
-				cfg.exec_policy = new MinGreedyExecPolicy();
+				cfg.gpu_exec_policy = new MinGreedyExecPolicy();
 			} else if (! std::strcmp(argv[4], "g")) {
-				cfg.exec_policy = new GreedyExecPolicy();
+				cfg.gpu_exec_policy = new GreedyExecPolicy();
 			} else if (! std::strcmp(argv[4], "qmax")) {
-				cfg.exec_policy = new QueueMaxExecPolicy();
+				cfg.gpu_exec_policy = new QueueMaxExecPolicy();
 			} else if (! std::strcmp(argv[4], "c")) {
-				cfg.exec_policy = new CPUGreedyPolicy();
+				cfg.gpu_exec_policy = new CPUGreedyPolicy();
 			} else if (! std::strcmp(argv[4], "h")) {
-				cfg.exec_policy = new HybridPolicy();
+				cfg.gpu_exec_policy = new HybridPolicy();
 			} else if (! std::strcmp(argv[4], "ge")) {
-				cfg.exec_policy = new GeorgeExecPolicy();
+				cfg.gpu_exec_policy = new GeorgeExecPolicy();
 			} else if (! std::strcmp(argv[4], "b")) {
-				cfg.exec_policy = new BestExecPolicy();
+				cfg.gpu_exec_policy = new BestExecPolicy();
 			} else if (! std::strcmp(argv[4], "hg")) {
-				cfg.exec_policy = new HybridCompositePolicy(new GreedyExecPolicy());
+				cfg.gpu_exec_policy = new HybridCompositePolicy(new GreedyExecPolicy());
 			} else if (! std::strcmp(argv[4], "hge")) {
-				cfg.exec_policy = new HybridCompositePolicy(new GeorgeExecPolicy());
+				cfg.gpu_exec_policy = new HybridCompositePolicy(new GeorgeExecPolicy());
 			} 
 		}
 		
 		srand(std::atoi(argv[5]));
+		cfg.gpu_throughput = atoi(argv[6]);
+		cfg.cpu_throughput = atoi(argv[7]);
 	} else if (ptype == ProcType::Static) {
-		if (argc != 7) {
+		if (argc != 9) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
 			std::exit(-1);
 		}
@@ -98,12 +100,14 @@ static ProcType handle_parameters(int argc, char* argv[], int shard) {
 		bool gpu = ! std::strcmp(argv[5], "gpu");
 		bool hybrid = ! std::strcmp(argv[5], "h");
 		
-		if (hybrid) cfg.exec_policy = new HybridBatch(cfg.processing_size);
-		else cfg.exec_policy = new StaticExecPolicy(gpu, cfg.processing_size);
+		if (hybrid) cfg.gpu_exec_policy = new HybridBatch(cfg.processing_size);
+		else cfg.gpu_exec_policy = new StaticExecPolicy(gpu, cfg.processing_size);
 
 		srand(std::atoi(argv[6]));
+		cfg.gpu_throughput = atoi(argv[7]);
+		cfg.cpu_throughput = atoi(argv[8]);
 	} else if (ptype == ProcType::Bench) {
-		cfg.exec_policy = new BenchExecPolicy();
+		cfg.gpu_exec_policy = new BenchExecPolicy();
 		cfg.test_length = cfg.eval_length = BENCH_SIZE * BENCH_REPEATS;
 	}
 
@@ -143,7 +147,9 @@ int main(int argc, char* argv[]) {
     } else if (world_rank == 0) {
     	aggregator(world_size - 2, ptype, cfg);
     } else {
-    	search(ptype, shard, cfg);
+    	cfg.cpu_exec_policy = new CPUGreedyPolicy();
+    	int blocks_gpu = std::nearbyint(double(cfg.gpu_throughput) / cfg.cpu_throughput);
+    	search(blocks_gpu, ptype, shard, cfg);
     }
     
     // Finalize the MPI environment.
