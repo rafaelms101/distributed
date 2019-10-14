@@ -202,7 +202,7 @@ void search(int blocks_gpu, ProcType ptype, int shard, Config& cfg) {
 	res.setTempMemory(cfg.temp_memory_gpu);
 
 	auto cpu_index = load_index(0, 1, cfg);
-	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, shard % 2, cpu_index, nullptr);
+	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, shard % cfg.gpus_per_node, cpu_index, nullptr);
 
 	deb("Search node is ready");
 	
