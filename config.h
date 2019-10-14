@@ -5,8 +5,8 @@
 
 constexpr int BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
 
-constexpr char SRC_PATH[] = "/home/rafael/mestrado/bigann"; //folder where the bigann database is stored
-constexpr char INDEX_ROOT[] = "index"; //folder where the indexed databases are stored
+constexpr char SRC_PATH[] = "../bigann"; //folder where the bigann database is stored
+constexpr char INDEX_ROOT[] = "../index"; //folder where the indexed databases are stored
 constexpr char PROF_ROOT[] = "prof"; //folder where the indexed databases are stored
 constexpr int BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
 
@@ -28,10 +28,11 @@ struct Config {
 	int block_size = 5;
 	int bench_step = block_size;
 
+	int gpus_per_node = 4;
 	
 	// filled elsewhere
-	int test_length = 50000; //how many queries will be sent in total
-	int eval_length = 50000; //of the sent queries, how many will be used to compute the average response time
+	int test_length = 100000; //how many queries will be sent in total
+	int eval_length = 100000; //of the sent queries, how many will be used to compute the average response time
 	
 	long temp_memory_gpu = 800 * 1024 * 1024;
 	int poisson_intervals = 100;
@@ -44,7 +45,7 @@ struct Config {
 	
 	ExecPolicy* exec_policy = nullptr;
 	
-	bool bench_cpu = false;
+	bool bench_cpu = true;
 };
 
 extern Config cfg;
