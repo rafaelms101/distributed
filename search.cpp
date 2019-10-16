@@ -161,6 +161,12 @@ static void main_driver(bool& finished, Buffer* query_buffer, Buffer* label_buff
 	while (! finished || query_buffer->entries() >= 1) {
 		int num_blocks = policy->numBlocksRequired(*query_buffer, cfg);
 		num_blocks = std::min(num_blocks, blocks_to_be_processed);
+		
+		if (num_blocks == 0) {
+			usleep(query_buffer->block_interval() * 1000000);
+			continue;
+		}
+		
 		query_buffer->waitForData(num_blocks);
 
 		blocks_to_be_processed -= num_blocks;
