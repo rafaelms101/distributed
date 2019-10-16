@@ -154,10 +154,11 @@ static void store_profile_data(bool gpu, std::vector<double>& procTimes, int sha
 	file.close();
 }
 
-static void main_driver(bool& finished, Buffer* query_buffer, Buffer* label_buffer, Buffer* distance_buffer, ExecPolicy* policy, int blocks_to_be_processed, faiss::Index* cpu_index, faiss::Index* gpu_index) {
+static void main_driver(bool gpu, bool& finished, Buffer* query_buffer, Buffer* label_buffer, Buffer* distance_buffer, ExecPolicy* policy, int blocks_to_be_processed, faiss::Index* cpu_index, faiss::Index* gpu_index) {
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
 	float* D = new float[cfg.eval_length * cfg.k];
-
+	int processed = 0;
+	
 	while (! finished || query_buffer->entries() >= 1) {
 		int num_blocks = policy->numBlocksRequired(*query_buffer, cfg);
 		num_blocks = std::min(num_blocks, blocks_to_be_processed);
@@ -172,8 +173,10 @@ static void main_driver(bool& finished, Buffer* query_buffer, Buffer* label_buff
 		blocks_to_be_processed -= num_blocks;
 		int nqueries = num_blocks * cfg.block_size;
 
-		deb("Processing %d queries", nqueries);
+		deb("Processing %d queries. %d already processed on the %s", nqueries, ???, gpu ? "gpu" : "cpu");
 		policy->process_buffer(cpu_index, gpu_index, nqueries, *query_buffer, I, D);
+		
+		processed += nqueries;
 
 		label_buffer->transfer(I, num_blocks);
 		distance_buffer->transfer(D, num_blocks);
@@ -221,8 +224,8 @@ void search(int blocks_gpu, ProcType ptype, int shard, Config& cfg) {
 	int size_gpu = size_total - size_cpu;
 	
 	std::thread receiver { comm_handler, blocks_gpu, &cpu_query_buffer, &gpu_query_buffer, &cpu_distance_buffer, &cpu_label_buffer, &gpu_distance_buffer, &gpu_label_buffer, std::ref(finished), std::ref(cfg) };
-	std::thread gpu_thread { main_driver, std::ref(finished), &gpu_query_buffer, &gpu_label_buffer, &gpu_distance_buffer, cfg.gpu_exec_policy, size_gpu, nullptr, gpu_index };
-	std::thread cpu_thread { main_driver, std::ref(finished), &cpu_query_buffer, &cpu_label_buffer, &cpu_distance_buffer, cfg.cpu_exec_policy, size_cpu, cpu_index, nullptr  };
+	std::thread gpu_thread { main_driver, true, std::ref(finished), &gpu_query_buffer, &gpu_label_buffer, &gpu_distance_buffer, cfg.gpu_exec_policy, size_gpu, nullptr, gpu_index };
+	std::thread cpu_thread { main_driver, false, std::ref(finished), &cpu_query_buffer, &cpu_label_buffer, &cpu_distance_buffer, cfg.cpu_exec_policy, size_cpu, cpu_index, nullptr  };
 
 	receiver.join();
 	cpu_thread.join();
