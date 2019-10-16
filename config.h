@@ -15,18 +15,18 @@ class ExecPolicy;
 
 struct Config {
 	//database config
-	const int d = 128; //vector dimension
+	int d = 128; //vector dimension
 	const int nb = 500000000; //database size
-	const int ncentroids = 4096; //number of centroids
-	const int m = 8; //vector size after compression, in bytes
-	const int nq = 10000; //total number of distinct queries
+	int ncentroids = 4096; //number of centroids
+	int m = 8; //vector size after compression, in bytes
+	int nq = 10000; //total number of distinct queries
 	
 	//runtime config
-	const int k = 10;
-	const int nprobe = 16;
-	const int block_size = 5;
-	const int test_length = 100000; //how many queries will be sent in total
-	const int eval_length = 100000; //of the sent queries, how many will be used to compute the average response time
+	int k = 10;
+	int nprobe = 16;
+	int block_size = 5;
+	int test_length = 100000; //how many queries will be sent in total
+	int eval_length = 100000; //of the sent queries, how many will be used to compute the average response time
 	
 	int shard;
 	
