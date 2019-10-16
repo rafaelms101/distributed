@@ -6,7 +6,7 @@
 
 int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	int num_blocks = buffer.entries();
-	return num_blocks;
+	return std::min(num_blocks, 200);
 }
 
 //TODO: add this to the HybridPolicy class
