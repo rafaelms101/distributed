@@ -435,7 +435,7 @@ int GeorgeExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 			processed += nq;
 			return num_blocks;
 		} else {
-			buffer.waitForData(num_blocks + 1);
+			return 0;
 		}
 	}
 }
