@@ -173,7 +173,7 @@ static void main_driver(bool gpu, bool& finished, Buffer* query_buffer, Buffer* 
 		blocks_to_be_processed -= num_blocks;
 		int nqueries = num_blocks * cfg.block_size;
 
-		deb("Processing %d queries. %d already processed on the %s", nqueries, ???, gpu ? "gpu" : "cpu");
+		deb("Processing %d queries. %d already processed on the %s", nqueries, processed, gpu ? "gpu" : "cpu");
 		policy->process_buffer(cpu_index, gpu_index, nqueries, *query_buffer, I, D);
 		
 		processed += nqueries;
