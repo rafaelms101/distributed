@@ -10,30 +10,35 @@
 
 void SearchStrategy::load_bench_data(bool cpu, long& best) {
 	char file_path[100];
-	sprintf(file_path, "%s_bench", cpu ? "cpu" : "gpu");
+	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d", PROF_ROOT, cpu ? "cpu" : "gpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 	std::ifstream file;
 	file.open(file_path);
 
-	if (! file.good()) {
-		std::printf("File %s_bench", cpu ? "cpu" : "gpu");
+	if (!file.good()) {
+		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d doesn't exist\n", PROF_ROOT, cpu ? "cpu" : "gpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 		std::exit(-1);
 	}
 
 	int total_size;
 	file >> total_size;
 
-	best = 0;
-	double best_time_per_query = 9999999;
+	std::vector<double> times(total_size + 1);
+
+	double btpq = 1000000000; //arbitrary huge value
+	best = 1;
 	
-	for (int i = 2; i <= total_size; i++) {
-		long qty;
-		file >> qty;
-		double total_time;
-		file >> total_time;
+	times[0] = 0;
+
+	for (int i = 1; i <= total_size; i++) {
+		file >> times[i];
 		
-		if (total_time / qty < best_time_per_query) {
-			best = qty;
-			best_time_per_query = total_time / qty;
+		auto nq = i * cfg.block_size;
+		
+		double tpq = times[i] / nq; 
+		
+		if (tpq < btpq) {
+			btpq = tpq;
+			best = nq;
 		}
 	}
 
