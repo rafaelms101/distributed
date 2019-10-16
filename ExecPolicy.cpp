@@ -5,7 +5,6 @@
 #include <future>   
 
 int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
 	int num_blocks = buffer.entries();
 	return num_blocks;
 }
