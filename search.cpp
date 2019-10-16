@@ -5,7 +5,8 @@
 #include <future>
 #include <fstream>
 #include <unistd.h>
- 
+#include <thread> 
+
 #include "faiss/index_io.h"
 #include "faiss/IndexFlat.h"
 #include "faiss/IndexIVFPQ.h"
@@ -160,6 +161,12 @@ void search(ProcType ptype, int shard, Config& cfg) {
 		int remaining_blocks = (cfg.test_length - qn) / cfg.block_size;
 		int num_blocks = cfg.exec_policy->numBlocksRequired(query_buffer, cfg);
 		if (ptype != ProcType::Bench) num_blocks = std::min(num_blocks, remaining_blocks);
+		
+		if (num_blocks == 0) {
+			usleep(query_buffer.block_interval() * 1000000);
+			continue;
+		}
+		
 		query_buffer.waitForData(num_blocks);
 
 		int nqueries = num_blocks * cfg.block_size;

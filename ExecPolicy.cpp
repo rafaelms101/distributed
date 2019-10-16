@@ -407,7 +407,7 @@ int BestExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 			return num_blocks;
 		}
 
-		buffer.waitForData(num_blocks + 1);
+		return 0;
 	}
 }
 

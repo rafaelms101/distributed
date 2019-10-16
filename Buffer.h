@@ -35,7 +35,7 @@ private:
 	long start = 0;
 	long end = 0;
 	
-	double time_between_blocks = 0;
+	double time_between_blocks = 0.0000001;
 	double last_block_time = 0;
 	
 	const long block_size;
