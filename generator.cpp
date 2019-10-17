@@ -151,6 +151,8 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 	
 	std::printf("%lf\n", total / cfg.eval_length);
 	std::printf("%lf\n", end_time[cfg.eval_length - 1] - start_time[0]);
+	
+	std::fflush(stdout);
 }
 
 static void single_block_size_generator(int nshards, double* query_start_time, Config& cfg) {
@@ -217,19 +219,26 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 	double* query_start;
 	
 	if (ptype != ProcType::Bench) {
-		auto times = BenchExecPolicy::load_prof_times(true, cfg);
+		
 		
 		deb("last interval: %lf", times[times.size() - 1] / ((times.size() - 1) * cfg.block_size));
 		
-		double best = 100000;
-		for (int i = 1; i < times.size(); i++) {
-			times[i] = times[i] / (i * cfg.block_size);
-			deb("%d: %lf", i * cfg.block_size, times[i]);
-			if (times[i] < best) best = times[i];
+		double query_interval = 0;
+
+		if (cfg.query_load > 0) {
+			auto times = BenchExecPolicy::load_prof_times(true, cfg);
+
+			double best = times[1];
+			for (int i = 1; i < times.size(); i++) {
+				times[i] = times[i] / (i * cfg.block_size);
+				deb("%d: %lf", i * cfg.block_size, times[i]);
+				if (times[i] < best) best = times[i];
+			}
+
+			deb("best interval: %lf", best);
+			query_interval = best / cfg.query_load;
 		}
-		deb("best interval: %lf", best);
-		
-		double query_interval = cfg.query_load > 0 ? best / cfg.query_load : 0;
+
 		deb("interval: %lf", query_interval);
 		
 		
@@ -240,10 +249,6 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 			}
 			case RequestDistribution::Variable_Poisson: {
 				query_start = query_start_time(poisson_constant_interval, query_interval, cfg);
-				break;
-			}
-			case RequestDistribution::Batch: {
-				query_start = query_start_time(constant_interval, 0, cfg);
 				break;
 			}
 		}

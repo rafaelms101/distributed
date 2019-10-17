@@ -18,9 +18,6 @@ static void process_query_distribution(char** argv) {
 		cfg.request_distribution = RequestDistribution::Constant;
 	} else if (! std::strcmp(argv[0], "p")) {
 		cfg.request_distribution = RequestDistribution::Variable_Poisson;
-	} else if (! std::strcmp(argv[0], "b")) {
-		cfg.request_distribution = RequestDistribution::Batch;
-		assert(cfg.query_load == 0);
 	} else {
 		std::printf("Wrong query distribution. Use 'p' or 'c'\n");
 		std::exit(-1);
