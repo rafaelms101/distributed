@@ -6,6 +6,7 @@
 #include <fstream>
 #include <unistd.h>
 #include <thread> 
+#include <cuda_runtime.h>
 
 #include "faiss/index_io.h"
 #include "faiss/IndexFlat.h"
@@ -82,12 +83,16 @@ static faiss::Index* load_index(int shard, int nshards, Config& cfg) {
 	char index_path[500];
 	sprintf(index_path, "%s/index_%d_%d_%d", INDEX_ROOT, cfg.nb, cfg.ncentroids, cfg.m);
 
-	deb("Loading file: %s", index_path);
-
+	if (! file_exists(index_path)) {
+		std::printf("%s doesnt exist\n", index_path);
+	}
+	
+	std::printf("shard %d) Loading file: %s\n", shard, index_path);
+	
 	FILE* index_file = fopen(index_path, "r");
 	auto cpu_index = read_index(index_file, shard, nshards);
 
-	deb("Ended loading");
+	std::printf("shard %d) Load finished\n", shard, index_path);
 
 	//TODO: Maybe we shouldnt set nprobe here
 	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = cfg.nprobe;
@@ -102,6 +107,11 @@ static void store_profile_data(bool gpu, std::vector<double>& procTimes, int sha
 	//now we write the time data on a file
 	char file_path[100];
 	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d_%d", gpu ? "gpu" : "cpu", PROF_ROOT, cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size, shard_number);
+	
+	if (! file_exists(file_path)) {
+		std::printf("%s doesnt exist\n", file_path);
+	}
+	
 	std::ofstream file;
 	file.open(file_path);
 
@@ -126,7 +136,20 @@ static void store_profile_data(bool gpu, std::vector<double>& procTimes, int sha
 	file.close();
 }
 
+static void logSearchStart(int shard) {
+	char hostname[1024];
+	gethostname(hostname, 1024);
+	int n;
+	cudaGetDeviceCount(&n);
+	std::printf("shard %d) Starting at %s. Visible gpus: %d\n", shard, hostname, n);
+}
+
 void search(ProcType ptype, int shard, Config& cfg) {
+	logSearchStart(shard);
+	
+	auto target_delta = cfg.test_length / 100;
+	auto target = target_delta;
+	
 	std::vector<double> procTimesGpu;
 	
 	cfg.exec_policy->setup();
@@ -178,6 +201,11 @@ void search(ProcType ptype, int shard, Config& cfg) {
 		distance_buffer.transfer(D, num_blocks);
 
 		qn += nqueries;
+		
+		if (qn >= target) {
+			std::printf("shard %d) %d queries processed\n", shard, qn);
+			target += target_delta;
+		}
 	}
 	
 	receiver.join();

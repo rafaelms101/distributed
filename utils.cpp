@@ -7,6 +7,7 @@
 #include <cstring>
 #include <fstream>
 #include <random>
+#include <sys/stat.h>
 
 #include "config.h"
 
@@ -93,4 +94,9 @@ std::pair<int, int> longest_contiguous_region(double tolerance, std::vector<doub
 	}
 
 	return std::pair<int, int>(bestStart, bestEnd);
+}
+
+bool file_exists(char* name) {
+  struct stat buffer;   
+  return stat(name, &buffer) == 0; 
 }
