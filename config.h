@@ -34,7 +34,7 @@ struct Config {
 	int test_length = 100000; //how many queries will be sent in total
 	int eval_length = 100000; //of the sent queries, how many will be used to compute the average response time
 	
-	long temp_memory_gpu = 800 * 1024 * 1024;
+	long temp_memory_gpu = 0;
 	int poisson_intervals = 100;
 	
 	//mode specific config

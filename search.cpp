@@ -140,7 +140,7 @@ void search(ProcType ptype, int shard, Config& cfg) {
 	Buffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
 	
 	faiss::gpu::StandardGpuResources res;
-	res.setTempMemory(cfg.temp_memory_gpu);
+	if (cfg.temp_memory_gpu > 0) res.setTempMemory(cfg.temp_memory_gpu);
 
 	auto cpu_index = load_index(0, 1, cfg);
 	auto gpu_index = faiss::gpu::index_cpu_to_gpu(&res, shard % cfg.gpus_per_node, cpu_index, nullptr);
