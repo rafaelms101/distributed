@@ -3,6 +3,6 @@
 
 #include "faiss/IndexIVFPQ.h"
 
-faiss::Index *read_index (FILE * f, int shard, int total_shards, int io_flags = 0);
+faiss::Index *read_index (FILE * f, float start_percent, float size_percent, int io_flags = 0);
 
 #endif /* READSPLITTEDINDEX_H_ */

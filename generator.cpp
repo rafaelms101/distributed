@@ -215,14 +215,10 @@ static double* query_start_time(double (*next_interval)(double), double param, C
 }
 
 //TODO: make generator a class
-void generator(int nshards, ProcType ptype, Config& cfg) {
+void generator(int nshards, Config& cfg) {
 	double* query_start;
 	
-	if (ptype != ProcType::Bench) {
-		
-		
-		deb("last interval: %lf", times[times.size() - 1] / ((times.size() - 1) * cfg.block_size));
-		
+	if (cfg.exec_type != ExecType::Bench) {
 		double query_interval = 0;
 
 		if (cfg.query_load > 0) {
@@ -263,6 +259,6 @@ void generator(int nshards, ProcType ptype, Config& cfg) {
 		shards_ready++;
 	}
 
-	if (ptype == ProcType::Bench) bench_generator(BENCH_SIZE, nshards, cfg);
+	if (cfg.exec_type == ExecType::Bench) bench_generator(BENCH_SIZE, nshards, cfg);
 	else single_block_size_generator(nshards, query_start, cfg);
 }

@@ -4,8 +4,8 @@
 
 struct ProfileData {
 	double* times;
-	int min_block;
-	int max_block;
+	long min_block;
+	long max_block;
 };
 
 

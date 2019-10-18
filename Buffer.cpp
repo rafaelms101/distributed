@@ -74,7 +74,7 @@ void Buffer::consume(const long n) {
 	}
 }
 
-int Buffer::entries() {
+long Buffer::entries() {
 	std::unique_lock<std::mutex> { mutex };
 	return used() / block_size;
 }

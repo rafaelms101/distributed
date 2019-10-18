@@ -20,7 +20,7 @@ public:
 	void waitForData(int n);
 	void waitForSpace(int n);
 	void transfer(void* data, int num_blocks);
-	int entries();
+	long entries();
 	
 private:
 	void maybe_realign();

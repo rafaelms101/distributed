@@ -9,6 +9,9 @@
 #include <random>
 #include <sys/stat.h>
 
+#include "readSplittedIndex.h"
+#include "faiss/IndexIVFPQ.h"
+
 #include "config.h"
 
 double now() {
@@ -99,4 +102,26 @@ std::pair<int, int> longest_contiguous_region(double tolerance, std::vector<doub
 bool file_exists(char* name) {
   struct stat buffer;   
   return stat(name, &buffer) == 0; 
+}
+
+faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cfg) {
+	deb("Started loading");
+	
+	char index_path[500];
+	sprintf(index_path, "%s/index_%d_%d_%d", INDEX_ROOT, cfg.nb, cfg.ncentroids, cfg.m);
+
+	if (! file_exists(index_path)) {
+		std::printf("%s doesnt exist\n", index_path);
+	}
+	
+	std::printf("shard %d) Loading file: %s\n", cfg.shard, index_path);
+	
+	FILE* index_file = fopen(index_path, "r");
+	auto cpu_index = dynamic_cast<faiss::IndexIVFPQ*>(read_index(index_file, start_percent, end_percent));
+
+	std::printf("shard %d) Load finished\n", cfg.shard, index_path);
+
+	//TODO: Maybe we shouldnt set nprobe here
+	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = cfg.nprobe;
+	return cpu_index;
 }

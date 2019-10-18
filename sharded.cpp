@@ -1,6 +1,7 @@
 #include <cstring>
 #include <mpi.h>
 #include <cassert>
+#include <cuda_runtime.h>
 
 #include "generator.h"
 #include "search.h"
@@ -12,99 +13,119 @@
 static void process_query_distribution(char** argv) {
 	assert(cfg.test_length % cfg.block_size == 0);
 	
-	cfg.query_load = std::atof(argv[1]);
-	
-	if (! std::strcmp(argv[0], "c")) {
+	if (!std::strcmp(argv[0], "c")) {
 		cfg.request_distribution = RequestDistribution::Constant;
-	} else if (! std::strcmp(argv[0], "p")) {
+	} else if (!std::strcmp(argv[0], "p")) {
 		cfg.request_distribution = RequestDistribution::Variable_Poisson;
 	} else {
 		std::printf("Wrong query distribution. Use 'p' or 'c'\n");
 		std::exit(-1);
 	}
+	
+	cfg.query_load = std::atof(argv[1]);
 }
 
-static ProcType handle_parameters(int argc, char* argv[], int shard) {
-	std::string usage = "./sharded b | d <c|p> <query_interval> <min|max|q|g|gmin|c|...> <seed> | s <c|p> <query_interval> <queries_per_block> <gpu|cpu|h> <seed>";
+static void process_exec_policy(char** argv) {
+	if (!std::strcmp(argv[0], "min")) {
+		cfg.exec_policy = new MinExecPolicy();
+	} else if (!std::strcmp(argv[0], "max")) {
+		cfg.exec_policy = new MaxExecPolicy();
+	} else if (!std::strcmp(argv[0], "q")) {
+		cfg.exec_policy = new QueueExecPolicy();
+	} else if (!std::strcmp(argv[0], "gmin")) {
+		cfg.exec_policy = new MinGreedyExecPolicy();
+	} else if (!std::strcmp(argv[0], "g")) {
+		cfg.exec_policy = new GreedyExecPolicy();
+	} else if (!std::strcmp(argv[0], "qmax")) {
+		cfg.exec_policy = new QueueMaxExecPolicy();
+	} else if (!std::strcmp(argv[0], "c")) {
+		cfg.exec_policy = new CPUGreedyPolicy();
+	} else if (!std::strcmp(argv[0], "h")) {
+		cfg.exec_policy = new HybridPolicy();
+	} else if (!std::strcmp(argv[0], "ge")) {
+		cfg.exec_policy = new GeorgeExecPolicy();
+	} else if (!std::strcmp(argv[0], "b")) {
+		cfg.exec_policy = new BestExecPolicy();
+	} else if (!std::strcmp(argv[0], "hg")) {
+		cfg.exec_policy = new HybridCompositePolicy(new GreedyExecPolicy());
+	} else if (!std::strcmp(argv[0], "s")) {
+		int block_size = std::atoi(argv[1]) / cfg.block_size;
+		bool gpu = ! std::strcmp(argv[2], "gpu");
+		cfg.exec_policy = new StaticExecPolicy(gpu, block_size);
+	} else {
+		std::printf("Wrong algorithm specified (%s)\n", argv[0]);
+		std::exit(-1);
+	}
+}
+
+static void process_search_strategy(char** argv) {
+	if (!std::strcmp(argv[0], "c")) {
+		cfg.search_algorithm = SearchAlgorithm::Cpu;
+	} else if (!std::strcmp(argv[0], "g")) {
+		cfg.search_algorithm = SearchAlgorithm::Gpu;
+		cfg.gpu_pieces = atoi(argv[1]);
+		cfg.total_pieces = atoi(argv[2]);
+	} else if (!std::strcmp(argv[0], "h")) {
+		cfg.search_algorithm = SearchAlgorithm::Hybrid;
+		cfg.gpu_pieces = atoi(argv[1]);
+		cfg.total_pieces = atoi(argv[2]);
+	} else if (!std::strcmp(argv[0], "cf")) {
+		cfg.search_algorithm = SearchAlgorithm::CpuFixed;
+		cfg.gpu_pieces = atoi(argv[1]);
+		cfg.total_pieces = atoi(argv[2]);
+	} else if (!std::strcmp(argv[0], "f")) {
+		cfg.search_algorithm = SearchAlgorithm::Fixed;
+		cfg.gpu_pieces = atoi(argv[1]);
+		cfg.total_pieces = atoi(argv[2]);
+	} else {
+		std::printf("Wrong algorithm specified (%s)\n", argv[0]);
+		std::exit(-1);
+	} 
+}
+
+static void handle_parameters(int argc, char* argv[], int shard) {
+	std::string usage = "./sharded b | sharded <c|p> <query_interval> <s|o> <alg params> | sharded <c|p> <query_interval> b <gpu_throughput> <cpu_throughput> <alg params>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
 		std::exit(-1);
 	}
 
-	ProcType ptype = ProcType::Bench;
-	if (! strcmp("d", argv[1])) ptype = ProcType::Dynamic;
-	else if (! strcmp("b", argv[1])) ptype = ProcType::Bench;
-	else if (! strcmp("s", argv[1])) ptype = ProcType::Static;
-	else {
-		std::printf("Invalid processing type.Expected b | s | d\n");
-		std::exit(-1);
-	}
-
-	if (ptype == ProcType::Dynamic) {
-		if (argc != 6) {
-			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			std::exit(-1);
-		}
-
-		process_query_distribution(&argv[2]);
-		
-		if (shard >= 0) {
-			if (! std::strcmp(argv[4], "min")) {
-				cfg.exec_policy = new MinExecPolicy();
-			} else if (! std::strcmp(argv[4], "max")) {
-				cfg.exec_policy = new MaxExecPolicy();
-			} else if (! std::strcmp(argv[4], "q")) {
-				cfg.exec_policy = new QueueExecPolicy();
-			} else if (! std::strcmp(argv[4], "gmin")) {
-				cfg.exec_policy = new MinGreedyExecPolicy();
-			} else if (! std::strcmp(argv[4], "g")) {
-				cfg.exec_policy = new GreedyExecPolicy();
-			} else if (! std::strcmp(argv[4], "qmax")) {
-				cfg.exec_policy = new QueueMaxExecPolicy();
-			} else if (! std::strcmp(argv[4], "c")) {
-				cfg.exec_policy = new CPUGreedyPolicy();
-			} else if (! std::strcmp(argv[4], "h")) {
-				cfg.exec_policy = new HybridPolicy();
-			} else if (! std::strcmp(argv[4], "ge")) {
-				cfg.exec_policy = new GeorgeExecPolicy();
-			} else if (! std::strcmp(argv[4], "b")) {
-				cfg.exec_policy = new BestExecPolicy();
-			} else if (! std::strcmp(argv[4], "hg")) {
-				cfg.exec_policy = new HybridCompositePolicy(new GreedyExecPolicy());
-			} else if (! std::strcmp(argv[4], "hge")) {
-				cfg.exec_policy = new HybridCompositePolicy(new GeorgeExecPolicy());
-			} 
-		}
-		
-		srand(std::atoi(argv[5]));
-	} else if (ptype == ProcType::Static) {
-		if (argc != 7) {
-			std::printf("Wrong arguments.\n%s\n", usage.c_str());
-			std::exit(-1);
-		}
-
-		process_query_distribution(&argv[2]);
-	
-		int nq = atoi(argv[4]); 
-		deb("%d <= %d", nq, cfg.eval_length);
-		assert(nq <= cfg.eval_length);
-		assert(nq % cfg.block_size == 0);
-		cfg.processing_size = nq / cfg.block_size;
-		
-		bool gpu = ! std::strcmp(argv[5], "gpu");
-		bool hybrid = ! std::strcmp(argv[5], "h");
-		
-		if (hybrid) cfg.exec_policy = new HybridBatch(cfg.processing_size);
-		else cfg.exec_policy = new StaticExecPolicy(gpu, cfg.processing_size);
-
-		srand(std::atoi(argv[6]));
-	} else if (ptype == ProcType::Bench) {
+	if (! strcmp("b", argv[1])) {
+		cfg.exec_type = ExecType::Bench;
 		cfg.exec_policy = new BenchExecPolicy();
-		cfg.test_length = cfg.eval_length = BENCH_SIZE * BENCH_REPEATS;
+	} else {
+		if (argc < 5) {
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::exit(-1);
+		}
+		
+		process_query_distribution(&argv[1]);
+		
+		if (! strcmp("s", argv[3])) {
+			cfg.exec_type = ExecType::Single;
+			process_exec_policy(&argv[4]);
+		} else if (! strcmp("b", argv[3])) {
+			cfg.exec_type = ExecType::Both;
+			cfg.gpu_throughput = atof(argv[4]);
+			cfg.cpu_throughput = atof(argv[5]);
+			process_exec_policy(&argv[6]);
+		} else if (! strcmp("o", argv[3])) {
+			cfg.exec_type = ExecType::OutOfCore;
+			process_search_strategy(&argv[4]);
+		} else {
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::exit(-1);
+		}
 	}
+}
 
-	return ptype;
+static void logSearchStart(int shard) {
+	char hostname[1024];
+	gethostname(hostname, 1024);
+	int n;
+	cudaGetDeviceCount(&n);
+	std::printf("shard %d) Starting at %s. Visible gpus: %d\n", shard, hostname, n);
 }
 
 int main(int argc, char* argv[]) {
@@ -112,8 +133,6 @@ int main(int argc, char* argv[]) {
 
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-	
-	
 
     // Get the number of processes
     int world_size;
@@ -132,15 +151,34 @@ int main(int argc, char* argv[]) {
     
     int shard = world_rank - 2;
     int nshards = world_size - 2;
-    ProcType ptype = handle_parameters(argc, argv, shard);
     
-
+    handle_parameters(argc, argv, shard);
+    
+    srand(cfg.seed);
+    
+    //TODO: remember to pass the right amount of blocks in the bench case
     if (world_rank == 1) {
-    	generator(world_size - 2, ptype, cfg);
+    	generator(world_size - 2, cfg);
     } else if (world_rank == 0) {
-    	aggregator(world_size - 2, ptype, cfg);
+    	aggregator(world_size - 2, cfg);
     } else {
-    	search(ptype, shard, cfg);
+    	logSearchStart(shard);
+    	cfg.shard = shard;
+    	
+    	if (cfg.exec_type == ExecType::Bench) {
+    		assert(BENCH_SIZE % cfg.block_size == 0);
+    		
+    		long n = BENCH_SIZE / cfg.bench_step;
+    		long num_blocks = BENCH_REPEATS * cfg.bench_step * n * (n + 1) / 2 / cfg.block_size;
+    		assert(num_blocks >= 1);
+    		search_single(shard, cfg.exec_policy, num_blocks);
+    	} else if (cfg.exec_type == ExecType::Single) {
+    		search_single(shard, cfg.exec_policy, cfg.test_length / cfg.block_size);
+    	} else if (cfg.exec_type == ExecType::Both) {
+    		search_both(shard, new CPUGreedyPolicy(), cfg.exec_policy, cfg.test_length / cfg.block_size, cfg.gpu_throughput, cfg.cpu_throughput);
+    	} else if (cfg.exec_type == ExecType::OutOfCore) {
+    		search_out(shard, cfg.search_algorithm);
+    	}
     }
     
     // Finalize the MPI environment.

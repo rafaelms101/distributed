@@ -120,7 +120,10 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 	delete [] gt;
 }
 
-void aggregator(int nshards, ProcType ptype, Config& cfg) {
+void aggregator(int nshards, Config& cfg) {
+	auto target_delta = cfg.test_length / 100;
+	auto target = target_delta;
+	
 	std::deque<double> end_times;
 
 	faiss::Index::idx_t* answers = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
@@ -178,10 +181,15 @@ void aggregator(int nshards, ProcType ptype, Config& cfg) {
 			
 			if (end_times.size() >= cfg.eval_length) end_times.pop_front();
 			end_times.push_back(now());
+			
+			if (qn >= target) {
+				std::printf("%d queries processed\n", qn);
+				target += target_delta;
+			}
 		}
 	}
 	
-	if (ptype != ProcType::Bench) {
+	if (cfg.exec_type != ExecType::Bench) {
 		show_recall(answers, cfg); 
 		send_times(end_times, cfg.eval_length);
 	}

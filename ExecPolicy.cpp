@@ -4,18 +4,18 @@
 #include <algorithm>
 #include <future>   
 
-int CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	int num_blocks = buffer.entries();
-	return num_blocks;
+long CPUGreedyPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	long num_blocks = buffer.entries();
+	return std::min(num_blocks, 200L);
 }
 
 //TODO: add this to the HybridPolicy class
-static int cpu_blocks(std::vector<double>& cpu, std::vector<double>& gpu, int nb) {
-	int nbgpu = nb;
-	int nbcpu = 0;
+static long cpu_blocks(std::vector<double>& cpu, std::vector<double>& gpu, long nb) {
+	long nbgpu = nb;
+	long nbcpu = 0;
 	
 	double best_time = gpu[nbgpu];
-	int bestnb = 0;
+	long bestnb = 0;
 	
 	nbgpu--;
 	nbcpu++;
@@ -41,29 +41,29 @@ void HybridPolicy::setup() {
 	
 	std::vector<double> time_per_block(timesGPU.size());
 
-	for (int i = 1; i < timesGPU.size(); i++) {
+	for (long i = 1; i < timesGPU.size(); i++) {
 		time_per_block[i] = timesGPU[i] / i;
 	}
 	
 	double tolerance = 0.1;
-	std::pair<int, int> limits = longest_contiguous_region(tolerance, time_per_block);
-	int minBlock = limits.first;
+	std::pair<long, long> limits = longest_contiguous_region(tolerance, time_per_block);
+	long minBlock = limits.first;
 	
 	max_blocks = minBlock + cpu_blocks(timesCPU, timesGPU, minBlock);
 	
 	nbToCpu.push_back(0);
 	
-	for (int i = 1; i <= max_blocks; i++) {
+	for (long i = 1; i <= max_blocks; i++) {
 		nbToCpu.push_back(cpu_blocks(timesCPU, timesGPU, i));
 	}
 }
 
-int HybridPolicy::bsearch(std::vector<double>& times, double val) {
-	int begin = 0;
-	int end = times.size() - 1;
+long HybridPolicy::bsearch(std::vector<double>& times, double val) {
+	long begin = 0;
+	long end = times.size() - 1;
 	
 	while (begin < end - 1) {
-		int mid = (end + begin) / 2;
+		long mid = (end + begin) / 2;
 		
 		if (times[mid] > val) {
 			end = mid - 1;
@@ -76,20 +76,19 @@ int HybridPolicy::bsearch(std::vector<double>& times, double val) {
 	else return begin;
 }
 
-int HybridPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
-	int num_blocks = buffer.entries();
+long HybridPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	long num_blocks = buffer.entries();
 	num_blocks = std::min(num_blocks, max_blocks);
 	
 	return num_blocks;
 }
 
-static bool gpu_search(faiss::Index* gpu_index, int nq_gpu, float* query_buffer, faiss::Index::idx_t* I, float* D) {
+static bool gpu_search(faiss::Index* gpu_index, long nq_gpu, float* query_buffer, faiss::Index::idx_t* I, float* D) {
 	if (nq_gpu > 0) gpu_index->search(nq_gpu, query_buffer, cfg.k, D, I);
 	return true;
 }
 
-void HybridPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+void HybridPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	auto nq_cpu = nbToCpu[nq / cfg.block_size] * cfg.block_size;
 	auto nq_gpu = nq - nq_cpu;
 	
@@ -108,7 +107,7 @@ void HybridCompositePolicy::setup() {
 
 	nbToCpu.push_back(0);
 	
-	for (int i = 1; i <= timesGPU.size(); i++) {
+	for (long i = 1; i <= timesGPU.size(); i++) {
 		nbToCpu.push_back(cpu_blocks(timesCPU, timesGPU, i));
 	}
 	
@@ -116,12 +115,12 @@ void HybridCompositePolicy::setup() {
 }
 
 //TODO: HybridCompositePolicy is basically a copy of HybridPolicy. Maybe merge the two?
-int HybridCompositePolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+long HybridCompositePolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	return policy->numBlocksRequired(buffer, cfg);
 }
 
-void HybridCompositePolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
-	int nb = nq / cfg.block_size;
+void HybridCompositePolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+	long nb = nq / cfg.block_size;
 	
 	auto nq_cpu = (nb < timesGPU.size() ? nbToCpu[nb] : (nbToCpu[timesGPU.size() - 1] * nb / timesGPU.size())) * cfg.block_size;
 	auto nq_gpu = nq - nq_cpu;
@@ -135,18 +134,18 @@ void HybridCompositePolicy::process_buffer(faiss::Index* cpu_index, faiss::Index
 	buffer.consume(nq / cfg.block_size);
 }
 
-HybridBatch::HybridBatch(int _block_size) : block_size(_block_size) {
+HybridBatch::HybridBatch(long _block_size) : block_size(_block_size) {
 	auto timesCPU = BenchExecPolicy::load_prof_times(false, cfg);
 	auto timesGPU = BenchExecPolicy::load_prof_times(true, cfg);
 
 	nbCPU = cpu_blocks(timesCPU, timesGPU, block_size);
 }
 
-int HybridBatch::numBlocksRequired(Buffer& buffer, Config& cfg) {
+long HybridBatch::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	return block_size;
 }
 
-void HybridBatch::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+void HybridBatch::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	auto nq_cpu = nbCPU * cfg.block_size;
 	auto nq_gpu = nq - nq_cpu;
 	
@@ -159,7 +158,7 @@ void HybridBatch::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_inde
 	buffer.consume(nq / cfg.block_size);
 }
 
-void BenchExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+void BenchExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 
 	//now we proccess our query buffer
@@ -183,7 +182,7 @@ void BenchExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_
 	buffer.consume(nq / cfg.block_size);
 }
 
-int BenchExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+long BenchExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	if (nrepeats >= BENCH_REPEATS) {
 		nrepeats = 0;
 		nb += cfg.bench_step / cfg.block_size;
@@ -206,21 +205,21 @@ void BenchExecPolicy::store_profile_data(bool gpu, Config& cfg) {
 
 	std::vector<double>& procTimes = gpu ? procTimesGpu : procTimesCpu;
 	
-	int blocks = procTimes.size() / BENCH_REPEATS;
+	long blocks = procTimes.size() / BENCH_REPEATS;
 	file << blocks << std::endl;
 
-	int ptr = 0;
+	long ptr = 0;
 
-	for (int b = 1; b <= blocks; b++) {
+	for (long b = 1; b <= blocks; b++) {
 		std::vector<double> times;
 
-		for (int repeats = 1; repeats <= BENCH_REPEATS; repeats++) {
+		for (long repeats = 1; repeats <= BENCH_REPEATS; repeats++) {
 			times.push_back(procTimes[ptr++]);
 		}
 
 		std::sort(times.begin(), times.end());
 
-		int mid = BENCH_REPEATS / 2;
+		long mid = BENCH_REPEATS / 2;
 		file << times[mid] << std::endl;
 	}
 
@@ -238,14 +237,14 @@ std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, Config& cfg) {
 		std::exit(-1);
 	}
 
-	int total_size;
+	long total_size;
 	file >> total_size;
 
 	std::vector<double> times(total_size + 1);
 
 	times[0] = 0;
 
-	for (int i = 1; i <= total_size; i++) {
+	for (long i = 1; i <= total_size; i++) {
 		file >> times[i];
 	}
 
@@ -259,19 +258,19 @@ void BenchExecPolicy::cleanup(Config& cfg) {
 	if (cfg.bench_cpu) store_profile_data(false, cfg);
 }
 
-void GPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+void GPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	gpu_index->search(nq, query_buffer, cfg.k, D, I);
 	buffer.consume(nq / cfg.block_size);
 }
 
-void CPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+void CPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	cpu_index->search(nq, query_buffer, cfg.k, D, I);
 	buffer.consume(nq / cfg.block_size);
 }
 
-void StaticExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, int nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
+void StaticExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) {
 	float* query_buffer = reinterpret_cast<float*>(buffer.peekFront());
 	(gpu ? gpu_index : cpu_index)->search(nq, query_buffer, cfg.k, D, I);
 	buffer.consume(nq / cfg.block_size);
@@ -281,19 +280,19 @@ void DynamicExecPolicy::setup() {
 	std::vector<double> times(BenchExecPolicy::load_prof_times(true, cfg));
 	std::vector<double> time_per_block(times.size());
 
-	for (int i = 1; i < times.size(); i++) {
+	for (long i = 1; i < times.size(); i++) {
 		time_per_block[i] = times[i] / i;
 	}
 
 	double tolerance = 0.1;
 
-	std::pair<int, int> limits = longest_contiguous_region(tolerance, time_per_block);
+	std::pair<long, long> limits = longest_contiguous_region(tolerance, time_per_block);
 	pdGPU.min_block = limits.first;
 	pdGPU.max_block = limits.second;
 
 	pdGPU.times = new double[pdGPU.min_block + 1];
 	pdGPU.times[0] = 0;
-	for (int nb = 1; nb <= pdGPU.min_block; nb++)
+	for (long nb = 1; nb <= pdGPU.min_block; nb++)
 		pdGPU.times[nb] = times[nb];
 
 	deb("min=%d, max=%d", pdGPU.min_block * cfg.block_size, pdGPU.max_block * cfg.block_size);
@@ -301,10 +300,8 @@ void DynamicExecPolicy::setup() {
 	assert(pdGPU.max_block <= cfg.eval_length);
 }
 
-int MinExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
-
-	int num_blocks = buffer.entries();
+long MinExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	long num_blocks = buffer.entries();
 
 	if (num_blocks < pdGPU.min_block) {
 		double work_without_waiting = num_blocks / pdGPU.times[num_blocks];
@@ -318,10 +315,8 @@ int MinExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	return std::min(buffer.entries(), pdGPU.min_block);
 }
 
-int MaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
-
-	int num_blocks = buffer.entries();
+long MaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	long num_blocks = buffer.entries();
 
 	if (num_blocks < pdGPU.min_block) {
 		double work_without_waiting = num_blocks / pdGPU.times[num_blocks];
@@ -335,13 +330,11 @@ int MaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	return std::min(buffer.entries(), pdGPU.max_block);
 }	
 
-int QueueExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
-
+long QueueExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	while (true) {
 		//deciding between executing what we have or wait one extra block
-		int num_blocks = buffer.entries();
-		int nq = num_blocks * cfg.block_size;
+		long num_blocks = buffer.entries();
+		long nq = num_blocks * cfg.block_size;
 
 		if (num_blocks >= pdGPU.min_block) {
 			processed += pdGPU.min_block * cfg.block_size;
@@ -369,19 +362,17 @@ int QueueExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 			return num_blocks;
 		}
 
-		buffer.waitForData(num_blocks + 1);
+		return 0;
 	}
 }
 
-int BestExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	constexpr int lookahead_blocks = 1; 
-	
-	buffer.waitForData(1);
+long BestExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	constexpr long lookahead_blocks = 1; 
 
 	while (true) {
 		//deciding between executing what we have or wait one extra block
-		int num_blocks = buffer.entries();
-		int nq = num_blocks * cfg.block_size;
+		long num_blocks = buffer.entries();
+		long nq = num_blocks * cfg.block_size;
 
 		if (num_blocks >= pdGPU.min_block) {
 			processed += pdGPU.min_block * cfg.block_size;
@@ -410,13 +401,11 @@ int BestExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	}
 }
 
-int GeorgeExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
-
+long GeorgeExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	while (true) {
 		//deciding between executing what we have or wait one extra block
-		int num_blocks = buffer.entries();
-		int nq = num_blocks * cfg.block_size;
+		long num_blocks = buffer.entries();
+		long nq = num_blocks * cfg.block_size;
 
 		if (num_blocks >= pdGPU.min_block) {
 			processed += pdGPU.min_block * cfg.block_size;
@@ -439,14 +428,12 @@ int GeorgeExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	}
 }
 
-int QueueMaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
-
+long QueueMaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	while (true) {
 		//deciding between executing what we have or wait one extra block
-		int num_blocks = buffer.entries();
+		long num_blocks = buffer.entries();
 //		if (processed % 1000 == 0) std::printf("processed: %d\n", processed);
-		int nq = num_blocks * cfg.block_size;
+		long nq = num_blocks * cfg.block_size;
 
 		if (num_blocks >= pdGPU.max_block) {
 			processed += pdGPU.max_block * cfg.block_size;
@@ -456,10 +443,10 @@ int QueueMaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 		if (nq + processed == cfg.test_length) return num_blocks;
 
 		//case 1: execute right now
-		int queries_after_execute = pdGPU.times[num_blocks] / buffer.block_interval();
+		long queries_after_execute = pdGPU.times[num_blocks] / buffer.block_interval();
 
 		//case 2: wait for one more block
-		int queries_after_wait = pdGPU.times[num_blocks + 1] / buffer.block_interval();
+		long queries_after_wait = pdGPU.times[num_blocks + 1] / buffer.block_interval();
 
 		if (queries_after_execute <= nq) {
 			processed += nq;
@@ -483,15 +470,13 @@ int QueueMaxExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
 	}
 }
 
-int MinGreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
-	int num_blocks = buffer.entries();
+long MinGreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	long num_blocks = buffer.entries();
 	return std::min(num_blocks, pdGPU.min_block);
 }
 
-int GreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
-	buffer.waitForData(1);
-	int num_blocks = buffer.entries();
+long GreedyExecPolicy::numBlocksRequired(Buffer& buffer, Config& cfg) {
+	long num_blocks = buffer.entries();
 	return num_blocks;
 }
 
