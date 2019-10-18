@@ -13,16 +13,28 @@
 static void process_query_distribution(char** argv) {
 	assert(cfg.test_length % cfg.block_size == 0);
 	
+	cfg.query_load = std::atof(argv[1]);
+	
+	if (cfg.query_load < 0) {
+		std::printf("Invalid load (%s)\n", argv[1]);
+		std::exit(-1);
+	}
+	
 	if (!std::strcmp(argv[0], "c")) {
 		cfg.request_distribution = RequestDistribution::Constant;
 	} else if (!std::strcmp(argv[0], "p")) {
 		cfg.request_distribution = RequestDistribution::Variable_Poisson;
+		
+		if (cfg.query_load <= 0) {
+			std::printf("Invalid load for a poisson distribution (%s)\n", argv[1]);
+			std::exit(-1);
+		}
 	} else {
 		std::printf("Wrong query distribution. Use 'p' or 'c'\n");
 		std::exit(-1);
 	}
 	
-	cfg.query_load = std::atof(argv[1]);
+	
 }
 
 static void process_exec_policy(char** argv) {
