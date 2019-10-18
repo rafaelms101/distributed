@@ -38,7 +38,7 @@ struct Config {
 	const long test_length = 100000; //how many queries will be sent in total
 	const long eval_length = 100000; //of the sent queries, how many will be used to compute the average response time
 	
-	const long temp_memory_gpu = 1000 * 1024 * 1024;
+	const long temp_memory_gpu = 0;
 	const long poisson_intervals = 100;
 	
 	RequestDistribution request_distribution;
