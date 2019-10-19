@@ -4,41 +4,42 @@
 #include <map>
 
 #include "QueueManager.h"
+#include "SyncBuffer.h"
 #include "utils.h"
 
 class SearchStrategy {
 protected:
-	Buffer& query_buffer; 
-	Buffer& distance_buffer; 
-	Buffer& label_buffer;
+	std::vector<SyncBuffer*> query_buffer; 
+	std::vector<SyncBuffer*> all_distance_buffers;
+	std::vector<SyncBuffer*> all_label_buffers;
+	
+	SyncBuffer* distance_buffer; 
+	SyncBuffer* label_buffer;
+	
 	float base_start; 
 	float base_end;
+	
 	faiss::gpu::StandardGpuResources* res;
 	
-	long best_query_point_cpu;
-	long best_query_point_gpu;
+	long best_block_point_cpu;
+	long best_block_point_gpu;
 	
 	void load_bench_data(bool cpu, long& best);
+
+	void merge(long num_queries, std::vector<float*>& all_distances, std::vector<faiss::Index::idx_t*>& all_labels, float* distance_array, faiss::Index::idx_t* label_array);
+	void merge_procedure(long& buffer_start_id, long& sent, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*>& all_label_buffers, Buffer& distance_buffer, Buffer& label_buffer);
+	void merger();
 	
 public:
-	SearchStrategy(Buffer& _query_buffer, Buffer& _distance_buffer, Buffer& _label_buffer, float _base_start, float _base_end, faiss::gpu::StandardGpuResources* _res = nullptr) : 
-		query_buffer(_query_buffer),
-		distance_buffer(_distance_buffer),
-		label_buffer(_label_buffer),
-		base_start(_base_start),
-		base_end(_base_end),
-		res(_res) {
-		load_bench_data(true, best_query_point_cpu);
-		load_bench_data(false, best_query_point_gpu);
-	}
+	SearchStrategy(int num_queues, float _base_start, float _base_end, faiss::gpu::StandardGpuResources* _res = nullptr);
 	
 	virtual ~SearchStrategy() {};
 	virtual void setup() = 0; //load bases and such
 	virtual void start_search_process() = 0; //process queries
 	
-	
-	void merge(long num_queries, std::vector<float*>& all_distances, std::vector<faiss::Index::idx_t*>& all_labels, float* distance_array, faiss::Index::idx_t* label_array);
-	void merge_procedure(long& buffer_start_id, long& sent, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*>& all_label_buffers, Buffer& distance_buffer, Buffer& label_buffer);
+	std::vector<SyncBuffer*>& queryBuffers() { return query_buffer; }
+	SyncBuffer* distanceBuffer() { return distance_buffer; }
+	SyncBuffer* labelBuffer() { return label_buffer; }
 };
 
 class HybridSearchStrategy : public SearchStrategy {
@@ -86,44 +87,11 @@ public:
 	void start_search_process();
 };
 
-class CpuFixedSearchStrategy : public SearchStrategy {
-	faiss::IndexIVFPQ* cpu_index;
-	std::vector<faiss::IndexIVFPQ*> all_gpu_bases;
-	faiss::gpu::GpuIndexIVFPQ* gpu_base;
-	std::vector<Buffer*> all_distance_buffers;
-	std::vector<Buffer*> all_label_buffers;
-	std::vector<long> proc_ids;
-	faiss::gpu::GpuIndexIVFPQ* gpu_index;
-	long buffer_start_id = 0;
-	long sent = 0;
-	std::mutex sync_mutex;
-	
-	void cpu_process();
-	void gpu_process();
-	
-public:
-	using SearchStrategy::SearchStrategy;
-	
-	void setup();
-	void start_search_process();
-};
-
 class FixedSearchStrategy : public SearchStrategy {
 	faiss::IndexIVFPQ* cpu_index;
 	faiss::gpu::GpuIndexIVFPQ* gpu_index;
 	
-	std::vector<Buffer*> all_distance_buffers;
-	std::vector<Buffer*> all_label_buffers;
-
-	long cpu_proc_id;
-	long gpu_proc_id;
-	
-	long buffer_start_id = 0;
-	long sent = 0;
-	std::mutex sync_mutex;
-	
-	void cpu_process();
-	void gpu_process();
+	void process(faiss::Index* index, SyncBuffer* query_buffer, SyncBuffer* distance_buffer, SyncBuffer* label_buffer, long cutoff_point); 
 	
 public:
 	using SearchStrategy::SearchStrategy;

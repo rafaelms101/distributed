@@ -163,8 +163,10 @@ static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer
 	deb("Finished receiving queries");	
 }
 
-static void comm_handler_out(Buffer* query_buffer, Buffer* distance_buffer, Buffer* label_buffer, bool& finished_receiving, Config& cfg) {
+static void comm_handler_out(std::vector<SyncBuffer*>& query_buffers, SyncBuffer* distance_buffer, SyncBuffer* label_buffer, bool& finished_receiving, Config& cfg) {
 	deb("Receiver");
+	
+	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
 	
 	long queries_received = 0;
 	long queries_sent = 0;
@@ -173,7 +175,7 @@ static void comm_handler_out(Buffer* query_buffer, Buffer* distance_buffer, Buff
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 
 	deb("Now waiting for queries");
-	
+
 	while (! finished_receiving || queries_sent < queries_received) {
 		if (! finished_receiving) {
 			MPI_Status status;
@@ -189,31 +191,32 @@ static void comm_handler_out(Buffer* query_buffer, Buffer* distance_buffer, Buff
 					float dummy;
 					MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
 				} else {
-					query_buffer->waitForSpace(1);
-					float* recv_data = reinterpret_cast<float*>(query_buffer->peekEnd());
-					MPI_Recv(recv_data, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-					query_buffer->add(1);
-					queries_received += cfg.block_size;
+					MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
 					
+					for (auto buffer : query_buffers) {
+						buffer->insert(1, tmp_buffer);
+					}
+					
+					queries_received += cfg.block_size;
 					assert(status.MPI_ERROR == MPI_SUCCESS);
 				}
 			}
 		}
 		
-		auto ready = std::min(distance_buffer->entries(), label_buffer->entries());
+		auto ready = std::min(distance_buffer->num_entries(), label_buffer->num_entries());
 
 		if (ready >= 1) {
 			queries_sent += ready * cfg.block_size;
 			
-			faiss::Index::idx_t* label_ptr = reinterpret_cast<faiss::Index::idx_t*>(label_buffer->peekFront());
-			float* dist_ptr = reinterpret_cast<float*>(distance_buffer->peekFront());
+			void* label_ptr = label_buffer->front();
+			void* dist_ptr = distance_buffer->front();
 			
 			//TODO: Optimize this to an Immediate Synchronous Send
 			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
 			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
 			
-			label_buffer->consume(ready);
-			distance_buffer->consume(ready);
+			label_buffer->remove(ready);
+			distance_buffer->remove(ready);
 		}
 	}
 
@@ -335,38 +338,30 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 void search_out(int shard, SearchAlgorithm search_algorithm) {
 	deb("search called");
 
-	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
-	const long distance_block_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
-	const long label_block_size_in_bytes = sizeof(faiss::Index::idx_t) * cfg.k * cfg.block_size;
-
-	Buffer query_buffer(block_size_in_bytes, 500 * 1024 * 1024 / block_size_in_bytes); //500MB
-	Buffer distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
-	Buffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
-
-	faiss::gpu::StandardGpuResources res;
-	if (cfg.temp_memory_gpu > 0) res.setTempMemory(cfg.temp_memory_gpu);
-
 	SearchStrategy* strategy;
 
 	float base_start = 0;
 	float base_end = 1;
 
+	faiss::gpu::StandardGpuResources res;
+	if (cfg.temp_memory_gpu > 0) res.setTempMemory(cfg.temp_memory_gpu);
+	
 	if (search_algorithm == SearchAlgorithm::Cpu) {
-		strategy = new CpuOnlySearchStrategy(query_buffer, distance_buffer, label_buffer, base_start, base_end);
-	} else if (search_algorithm== SearchAlgorithm::Hybrid) {
-		strategy = new HybridSearchStrategy(query_buffer, distance_buffer, label_buffer, base_start, base_end, &res);
-	} else if (search_algorithm == SearchAlgorithm::Gpu) {
-		strategy = new GpuOnlySearchStrategy(query_buffer, distance_buffer, label_buffer, base_start, base_end, &res);
-	} else if (search_algorithm == SearchAlgorithm::CpuFixed) {
-		strategy = new CpuFixedSearchStrategy(query_buffer, distance_buffer, label_buffer, base_start, base_end, &res);
-	} else if (search_algorithm == SearchAlgorithm::Fixed) {
-		strategy = new FixedSearchStrategy(query_buffer, distance_buffer, label_buffer, base_start, base_end, &res);
+		strategy = new CpuOnlySearchStrategy(1, base_start, base_end);
+	} 
+//	else if (search_algorithm == SearchAlgorithm::Hybrid) {
+//		strategy = new HybridSearchStrategy(base_start, base_end, &res);
+//	} else if (search_algorithm == SearchAlgorithm::Gpu) {
+//		strategy = new GpuOnlySearchStrategy(base_start, base_end, &res);
+//	} 
+	else if (search_algorithm == SearchAlgorithm::Fixed) {
+		strategy = new FixedSearchStrategy(2, base_start, base_end, &res);
 	}
 
 	strategy->setup();
 
 	bool finished = false;
-	std::thread receiver { comm_handler_out, &query_buffer, &distance_buffer, &label_buffer, std::ref(finished), std::ref(cfg) };
+	std::thread receiver { comm_handler_out, std::ref(strategy->queryBuffers()), strategy->distanceBuffer(), strategy->labelBuffer(), std::ref(finished), std::ref(cfg) };
 
 	strategy->start_search_process();
 
