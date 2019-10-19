@@ -351,10 +351,10 @@ void search_out(int shard, SearchAlgorithm search_algorithm) {
 	} 
 //	else if (search_algorithm == SearchAlgorithm::Hybrid) {
 //		strategy = new HybridSearchStrategy(base_start, base_end, &res);
-//	} else if (search_algorithm == SearchAlgorithm::Gpu) {
-//		strategy = new GpuOnlySearchStrategy(base_start, base_end, &res);
 //	} 
-	else if (search_algorithm == SearchAlgorithm::Fixed) {
+	else if (search_algorithm == SearchAlgorithm::Gpu) {
+		strategy = new GpuOnlySearchStrategy(cfg.gpu_pieces, base_start, base_end, &res);
+	} else if (search_algorithm == SearchAlgorithm::Fixed) {
 		strategy = new FixedSearchStrategy(2, base_start, base_end, &res);
 	}
 

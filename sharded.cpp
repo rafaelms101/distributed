@@ -76,13 +76,8 @@ static void process_search_strategy(char** argv) {
 	} else if (!std::strcmp(argv[0], "g")) {
 		cfg.search_algorithm = SearchAlgorithm::Gpu;
 		cfg.gpu_pieces = atoi(argv[1]);
-		cfg.total_pieces = atoi(argv[2]);
 	} else if (!std::strcmp(argv[0], "h")) {
 		cfg.search_algorithm = SearchAlgorithm::Hybrid;
-		cfg.gpu_pieces = atoi(argv[1]);
-		cfg.total_pieces = atoi(argv[2]);
-	} else if (!std::strcmp(argv[0], "cf")) {
-		cfg.search_algorithm = SearchAlgorithm::CpuFixed;
 		cfg.gpu_pieces = atoi(argv[1]);
 		cfg.total_pieces = atoi(argv[2]);
 	} else if (!std::strcmp(argv[0], "f")) {
