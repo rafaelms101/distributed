@@ -8,6 +8,8 @@
 
 #include "config.h"
 
+typedef unsigned char byte;
+
 //#define DEBUG
 
 #ifdef DEBUG

@@ -2,7 +2,7 @@
 #define EXECPOLICY_H_
 
 #include "utils.h"
-#include "Buffer.h"
+#include "SyncBuffer.h"
 #include "config.h"
 #include "ProfileData.h"
 #include "unistd.h"
@@ -14,26 +14,26 @@ public:
 	virtual ~ExecPolicy() {}
 	
 	virtual void setup() {}
-	virtual long numBlocksRequired(Buffer& buffer, Config& cfg) = 0;
-	virtual void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D) = 0;
+	virtual long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg) = 0;
+	virtual void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& SyncBuffer, faiss::Index::idx_t* I, float* D) = 0;
 	virtual void cleanup(Config& cfg) {}
 	virtual bool usesGPU() = 0;
 };
 
 class CPUPolicy : public ExecPolicy {
 public:
-	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& SyncBuffer, faiss::Index::idx_t* I, float* D);
 	bool usesGPU() { return false; }
 };
 
 class CPUGreedyPolicy : public CPUPolicy {	
 public:
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 };
 
 class GPUPolicy : public ExecPolicy {
 public:
-	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& SyncBuffer, faiss::Index::idx_t* I, float* D);
 	bool usesGPU() { return true; }
 };
 
@@ -43,8 +43,8 @@ class HybridBatch : public ExecPolicy {
 	
 public:
 	HybridBatch(long block_size);
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
-	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& SyncBuffer, faiss::Index::idx_t* I, float* D);
 	bool usesGPU() { return true; }
 };
 
@@ -59,8 +59,8 @@ class HybridPolicy : public ExecPolicy {
 public:
 	HybridPolicy() {}
 	void setup();
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
-	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& SyncBuffer, faiss::Index::idx_t* I, float* D);
 	void cleanup(Config& cfg) { }
 	bool usesGPU() { return true; }
 };
@@ -74,8 +74,8 @@ class HybridCompositePolicy : public ExecPolicy {
 public:
 	HybridCompositePolicy(ExecPolicy* _policy) : policy(_policy) {}
 	void setup();
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
-	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& SyncBuffer, faiss::Index::idx_t* I, float* D);
 	void cleanup(Config& cfg) { policy->cleanup(cfg); }	
 	bool usesGPU() { return true; }
 };
@@ -87,8 +87,8 @@ private:
 
 public:
 	StaticExecPolicy(bool _gpu, long bs) : block_size(bs), gpu(_gpu) {}
-	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
-	long numBlocksRequired(Buffer& buffer, Config& cfg) { return block_size; }
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& SyncBuffer, faiss::Index::idx_t* I, float* D);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg) { return block_size; }
 	bool usesGPU() { return gpu; }
 };
 
@@ -105,10 +105,10 @@ private:
 	
 public:
 	BenchExecPolicy() {} 
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 	void cleanup(Config& cfg);
 	
-	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, Buffer& buffer, faiss::Index::idx_t* I, float* D);
+	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& SyncBuffer, faiss::Index::idx_t* I, float* D);
 	static std::vector<double> load_prof_times(bool gpu, Config& cfg);
 	bool usesGPU() { return true; }
 };
@@ -128,13 +128,13 @@ public:
 class MinExecPolicy : public DynamicExecPolicy {
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 };
 
 class MaxExecPolicy : public DynamicExecPolicy {
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 };
 
 class QueueExecPolicy : public DynamicExecPolicy {
@@ -143,7 +143,7 @@ private:
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 };
 
 class BestExecPolicy : public DynamicExecPolicy {
@@ -152,7 +152,7 @@ private:
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 };
 
 class GeorgeExecPolicy : public DynamicExecPolicy {
@@ -161,7 +161,7 @@ private:
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 };
 
 class QueueMaxExecPolicy : public DynamicExecPolicy {
@@ -170,7 +170,7 @@ private:
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 };
 
 
@@ -178,12 +178,12 @@ public:
 class MinGreedyExecPolicy : public DynamicExecPolicy {
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 };
 
 class GreedyExecPolicy : public GPUPolicy {
 public:
-	long numBlocksRequired(Buffer& buffer, Config& cfg);
+	long numBlocksRequired(SyncBuffer& SyncBuffer, Config& cfg);
 };
 
 #endif /* EXECPOLICY_H_ */
