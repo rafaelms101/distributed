@@ -348,11 +348,9 @@ void search_out(int shard, SearchAlgorithm search_algorithm) {
 	
 	if (search_algorithm == SearchAlgorithm::Cpu) {
 		strategy = new CpuOnlySearchStrategy(1, base_start, base_end);
-	} 
-//	else if (search_algorithm == SearchAlgorithm::Hybrid) {
-//		strategy = new HybridSearchStrategy(base_start, base_end, &res);
-//	} 
-	else if (search_algorithm == SearchAlgorithm::Gpu) {
+	} else if (search_algorithm == SearchAlgorithm::Hybrid) {
+		strategy = new HybridSearchStrategy(cfg.total_pieces, base_start, base_end, &res);
+	} else if (search_algorithm == SearchAlgorithm::Gpu) {
 		strategy = new GpuOnlySearchStrategy(cfg.gpu_pieces, base_start, base_end, &res);
 	} else if (search_algorithm == SearchAlgorithm::Fixed) {
 		strategy = new FixedSearchStrategy(2, base_start, base_end, &res);

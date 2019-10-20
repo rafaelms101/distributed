@@ -43,10 +43,14 @@ public:
 };
 
 class HybridSearchStrategy : public SearchStrategy {
-	QueueManager* qm;
+	std::vector<faiss::IndexIVFPQ*> cpu_index;
+	faiss::gpu::GpuIndexIVFPQ* gpu_index;
+	long on_gpu;
+	std::atomic<long> remaining_blocks;
+	std::vector<std::mutex*> mutvec;
 	
-	void gpu_process(std::mutex* cleanup_mutex);
-	void cpu_process(std::mutex* cleanup_mutex);
+	void gpu_process();
+	void cpu_process();
 	
 public:
 	using SearchStrategy::SearchStrategy;

@@ -125,128 +125,124 @@ void SearchStrategy::merger() {
 	}
 }
 
-//
-//void HybridSearchStrategy::gpu_process(std::mutex* cleanup_mutex) {
-//	while (qm->sent_queries() < cfg.test_length) {
-//		bool emptyQueue = true;
-//
-//		for (QueryQueue* qq : qm->queues()) {
-//			if (!qq->on_gpu) continue;
-//
-//			qq->lock();
-//
-//			long nq = std::min(qq->size(), best_query_point_gpu);
-//			assert(nq >= 0);
-//
-//			qq->search(nq);
-//			qq->unlock();
-//
-//			emptyQueue = emptyQueue && nq == 0;
-//		}
-//
-//		if (cleanup_mutex->try_lock()) {
-//			qm->shrinkQueryBuffer();
-//			qm->mergeResults();
-//			cleanup_mutex->unlock();
-//		}
-//
-//		if (emptyQueue && ! qm->gpu_loading) {
-//			QueryQueue* cpu_queue = qm->biggestCPUQueue();
-//			QueryQueue* gpu_queue = qm->firstGPUQueue();
-//
-//			auto cpu_size = cpu_queue->size();
-//			auto gpu_size = gpu_queue->size();
-//			
-//			if (cpu_size > 1000 && gpu_size * 5 < cpu_size) { //arbitrary threshold
-//				qm->switchToGPU(cpu_queue, gpu_queue);
-//			}
-//		}
-//	}
-//	
-//	while (qm->gpu_loading) {
-//		usleep(1 * 1000 * 1000);
-//	}
-//
-//	if (cfg.shard == 0) {
-//		std::printf("bases exchanged: %ld\n", qm->bases_exchanged);
-//		for (int j = 0; j < qm->bases_exchanged; j++) {
-//			std::printf("b: ");
-//			for (int i = 0; i < qm->_queues.size(); i++) {
-//				if (i == qm->switches[j].first) {
-//					std::printf("<");
-//				} else if (i == qm->switches[j].second) {
-//					std::printf(">");
-//				}
-//
-//				std::printf("%ld ", qm->log[j][i]);
-//			}
-//			std::printf("\n");
-//		}
-//	}
-//}
-//
-//void HybridSearchStrategy::cpu_process(std::mutex* cleanup_mutex) {
-//	while (qm->sent_queries() < cfg.test_length) {
-//		for (QueryQueue* qq : qm->queues()) {
-//			if (qq->on_gpu) continue;
-//
-//			qq->lock();
-//
-//			long nq = std::min(qq->size(), best_query_point_cpu);
-//			assert(nq >= 0);
-//			qq->search(nq);
-//			qq->unlock();
-//		}
-//
-//		if (cleanup_mutex->try_lock()) {
-//			qm->shrinkQueryBuffer();
-//			qm->mergeResults();
-//			cleanup_mutex->unlock();
-//		}
-//	}
-//}
-//
-//void HybridSearchStrategy::setup() {
-//	qm = new QueueManager(&query_buffer, &label_buffer, &distance_buffer);
-//
-//	long pieces = cfg.total_pieces;
-//	float gpu_pieces = cfg.gpu_pieces;
-//	float step = (base_end - base_start) / pieces;
-//
-//	for (int i = 0; i < pieces; i++) {
-//		auto cpu_index = load_index(base_start + i * step, base_start + (i + 1) * step, cfg);
-//		deb("Creating index from %f to %f", base_start + i * step, base_start + (i + 1) * step);
-//		QueryQueue* qq = new QueryQueue(cpu_index, qm, i);
-//
-//		if (i < gpu_pieces) {
-//			qq->create_gpu_index(*res);
-//		}
-//	}
-//}
-//
-//void HybridSearchStrategy::start_search_process() {
-//	std::mutex cleanup_mutex;
-//
-//	std::thread gpu_thread { &HybridSearchStrategy::gpu_process, this, &cleanup_mutex };
-//	std::thread cpu_thread { &HybridSearchStrategy::cpu_process, this, &cleanup_mutex };
-//
-//	cpu_thread.join();
-//	gpu_thread.join();
-//}
+
+void HybridSearchStrategy::gpu_process() {
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[best_block_point_gpu * cfg.block_size * cfg.k];
+	float* D = new float[best_block_point_gpu * cfg.block_size * cfg.k];
+
+	while (remaining_blocks >= 1) {
+		//REMEMBER, IT MIGHT BE THAT INSIDE HERE REMAINING_BLOCKS IS, IN FACT, 0
+		
+		auto nb = std::min(query_buffer[on_gpu]->num_entries(), best_block_point_gpu);
+		
+		if (nb == 0) {
+			// find the biggest queue
+			long largest_index = 0;
+			long largest_size = 0;
+			
+			for (int i = 0; i < query_buffer.size(); i++) {
+				long size = query_buffer[i]->num_entries();
+				if (size > largest_size) {
+					largest_size = size;
+					largest_index = i;
+				}
+			}
+			
+			// exchange it IF there are enough queries
+			long gpu_size = query_buffer[on_gpu]->num_entries();
+			
+			if (largest_size >= 600 && gpu_size <= 200) { //3000 and 1000 queries
+				//exchange it
+				deb("Switching %d[size=%d] with %d[size=%d]", on_gpu, gpu_size * cfg.block_size, largest_index, largest_size * cfg.block_size);
+				on_gpu = largest_index;
+				gpu_index->copyFrom(cpu_index[largest_index]);
+				deb("Switch finished");
+			}
+		} else {
+			mutvec[on_gpu]->lock();
+			
+			deb("Processing %d queries on the GPU[%d]", nb * cfg.block_size, on_gpu);
+			gpu_index->search(nb * cfg.block_size, (float*) query_buffer[on_gpu]->front(), cfg.k, D, I);
+			
+			query_buffer[on_gpu]->remove(nb);
+			all_distance_buffers[on_gpu]->insert(nb, (byte*) D);
+			all_label_buffers[on_gpu]->insert(nb, (byte*) I);
+
+			remaining_blocks -= nb;
+
+			mutvec[on_gpu]->unlock();
+		}
+	}
+}
+
+void HybridSearchStrategy::cpu_process() {
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[best_block_point_cpu * cfg.block_size * cfg.k];
+	float* D = new float[best_block_point_cpu * cfg.block_size * cfg.k];
+	
+	while (remaining_blocks >= 1) {
+		//REMEMBER, IT MIGHT BE THAT INSIDE HERE REMAINING_BLOCKS IS, IN FACT, 0
+		
+		for (int i = 0; i < cpu_index.size(); i++) {
+			if (i == on_gpu) continue;
+			
+			auto nb = std::min(query_buffer[i]->num_entries(), best_block_point_cpu); //TODO: maybe reduce this to like 20
+			
+			if (nb == 0) continue;
+			
+			mutvec[i]->lock();
+			
+			deb("Processing %d queries on the CPU[%d]", nb * cfg.block_size, i);
+			cpu_index[i]->search(nb * cfg.block_size, (float*) query_buffer[i]->front(), cfg.k, D, I);
+
+			query_buffer[i]->remove(nb);
+			all_distance_buffers[i]->insert(nb, (byte*) D);
+			all_label_buffers[i]->insert(nb, (byte*) I);
+							
+			remaining_blocks -= nb;
+
+			mutvec[i]->unlock();
+		}
+	}
+}
+
+void HybridSearchStrategy::start_search_process() {
+	std::thread merger_process { &HybridSearchStrategy::merger, this };
+	std::thread cpu_thread { &HybridSearchStrategy::cpu_process, this };
+	std::thread gpu_thread { &HybridSearchStrategy::gpu_process, this };
+
+	merger_process.join();
+	cpu_thread.join();
+	gpu_thread.join();
+}
+
+void HybridSearchStrategy::setup() {
+	deb("search_gpu called");
+
+	float step = (base_end - base_start) / cfg.total_pieces;
+
+	for (int i = 0; i < cfg.total_pieces; i++) {
+		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+		mutvec.push_back(new std::mutex());
+	}
+
+	gpu_index = dynamic_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % cfg.gpus_per_node, cpu_index[0], nullptr));
+	on_gpu = 0;
+	remaining_blocks = cfg.test_length / cfg.block_size * cpu_index.size();
+}
 
 void CpuOnlySearchStrategy::setup() {
 	cpu_index = load_index(base_start, base_end, cfg);
 }
 
 void CpuOnlySearchStrategy::start_search_process() {
-	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
-	float* D = new float[cfg.eval_length * cfg.k];
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[best_block_point_cpu * cfg.block_size * cfg.k];
+	float* D = new float[best_block_point_cpu * cfg.block_size * cfg.k];
 
 	long sent = 0;
 	
 	while (sent < cfg.test_length) {
 		deb("waiting for queries");
-		long nblocks = std::min(query_buffer[0]->num_entries(), 200L);
+		long nblocks = std::min(query_buffer[0]->num_entries(), best_block_point_cpu);
 		
 		if (nblocks == 0) {
 			auto sleep_time_us = std::min(query_buffer[0]->arrivalInterval() * 1000000, 1000.0);
@@ -271,7 +267,7 @@ void CpuOnlySearchStrategy::start_search_process() {
 void GpuOnlySearchStrategy::setup() {
 	deb("search_gpu called");
 
-	float step = (base_end - base_start) / cfg.total_pieces;
+	float step = (base_end - base_start) / cfg.gpu_pieces;
 
 	for (int i = 0; i < cfg.gpu_pieces; i++) {
 		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
