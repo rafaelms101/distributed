@@ -28,8 +28,8 @@ cpu_thr=$(echo "100000 / $cpu_time" | bc)
 gpu_thr=$(echo "100000 / $gpu_time" | bc)
 
 # now we "fix" things for running with the 1bi benchmark
-cp cpu_500000000_4096_8_10_16_5 cpu_1000000000_4096_8_10_16_5
-cp gpu_500000000_4096_8_10_16_5 gpu_1000000000_4096_8_10_16_5
+cp prof/cpu_500000000_4096_8_10_16_5 prof/cpu_1000000000_4096_8_10_16_5
+cp prof/gpu_500000000_4096_8_10_16_5 prof/gpu_1000000000_4096_8_10_16_5
 
 git apply diff_1bi
 
@@ -40,7 +40,7 @@ lrun -N 1 -T 4 -c 10 -g 1  ./sharded p 1 o h 1 2
 
 for nodes in {2..$nodes_max..$nodes_step}
 do
-	echo 'out-of-core nodes=$nodes'
+	echo "out-of-core nodes=$nodes"
 	lrun -N $nodes -T 4 -c 10 -g 1  ./sharded p 1 o h 1 2
 done
 
@@ -54,6 +54,6 @@ lrun -N 1 -T 4 -c 10 -g 1  ./sharded p 1 b $gpu_thr $cpu_thr b
 
 for nodes in {2..$nodes_max..$nodes_step}
 do
-	echo 'in-core nodes=$nodes'
+	echo "in-core nodes=$nodes"
 	lrun -N $nodes -T 4 -c 10 -g 1  ./sharded p 1 b $gpu_thr $cpu_thr b
 done
