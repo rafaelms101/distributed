@@ -31,7 +31,7 @@ struct Config {
 	const long block_size = 5;
 	const long bench_step = block_size;
 
-	const long gpus_per_node = 4;
+	const long gpus_per_node = 1;
 	const bool bench_cpu = true;
 	const long seed = 2;
 
