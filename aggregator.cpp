@@ -121,7 +121,7 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 }
 
 void aggregator(int nshards, Config& cfg) {
-	auto target_delta = cfg.test_length / 100;
+	auto target_delta = cfg.test_length / 10;
 	auto target = target_delta;
 	
 	std::deque<double> end_times;
