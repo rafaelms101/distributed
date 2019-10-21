@@ -1,0 +1,15 @@
+diff --git a/config.h b/config.h
+index a545ac7..0c13764 100644
+--- a/config.h
++++ b/config.h
+@@ -5,8 +5,8 @@
+ 
+ constexpr long BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
+ 
+-constexpr char SRC_PATH[] = "../bigann"; //folder where the bigann database is stored
+-constexpr char INDEX_ROOT[] = "../index"; //folder where the indexed databases are stored
++constexpr char SRC_PATH[] = "/usr/workspace/thiago/bigann"; //folder where the bigann database is stored
++constexpr char INDEX_ROOT[] = "/usr/workspace/thiago/index"; //folder where the indexed databases are stored
+ constexpr char PROF_ROOT[] = "prof"; //folder where the indexed databases are stored
+ constexpr long BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
+ 

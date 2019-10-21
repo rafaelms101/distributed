@@ -1,0 +1,13 @@
+diff --git a/config.h b/config.h
+index a545ac7..b2a7c51 100644
+--- a/config.h
++++ b/config.h
+@@ -20,7 +20,7 @@ class SearchStrategy;
+ struct Config {
+ 	//database config
+ 	const long d = 128; //vector dimension
+-	const long nb = 500000000; //database size
++	const long nb = 1000000000; //database size
+ 	const long ncentroids = 4096; //number of centroids
+ 	const long m = 8; //vector size after compression, in bytes
+ 	const long nq = 10000; //total number of distinct queries
