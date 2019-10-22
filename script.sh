@@ -3,9 +3,7 @@ nodes_step=2
 
 export OMP_NUM_THREADS=7
 
-git clone https://github.com/redmajor/distributed.git
 
-cd distributed
 
 git apply diff_folders
 
