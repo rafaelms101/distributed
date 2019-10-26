@@ -174,9 +174,9 @@ int main(int argc, char* argv[]) {
     		assert(BENCH_SIZE % cfg.block_size == 0);
     		
     		long n = BENCH_SIZE / cfg.bench_step;
-    		long num_blocks = BENCH_REPEATS * cfg.bench_step * n * (n + 1) / 2 / cfg.block_size;
-    		assert(num_blocks >= 1);
-    		search_single(shard, cfg.exec_policy, num_blocks);
+    		cfg.num_blocks = BENCH_REPEATS * cfg.bench_step * n * (n + 1) / 2 / cfg.block_size;
+    		assert(cfg.num_blocks >= 1);
+    		search_single(shard, cfg.exec_policy, cfg.num_blocks);
     	} else if (cfg.exec_type == ExecType::Single) {
     		search_single(shard, cfg.exec_policy, cfg.num_blocks);
     	} else if (cfg.exec_type == ExecType::Both) {
