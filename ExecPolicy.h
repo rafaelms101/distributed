@@ -139,7 +139,7 @@ public:
 
 class QueueExecPolicy : public DynamicExecPolicy {
 private:
-	long processed = 0;
+	long blocks_processed = 0;
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
@@ -148,7 +148,7 @@ public:
 
 class BestExecPolicy : public DynamicExecPolicy {
 private:
-	long processed = 0;
+	long blocks_processed = 0;
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
@@ -157,7 +157,7 @@ public:
 
 class GeorgeExecPolicy : public DynamicExecPolicy {
 private:
-	long processed = 0;
+	long blocks_processed = 0;
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;
@@ -166,7 +166,7 @@ public:
 
 class QueueMaxExecPolicy : public DynamicExecPolicy {
 private:
-	long processed = 0;
+	long blocks_processed = 0;
 	
 public:
 	using DynamicExecPolicy::DynamicExecPolicy;

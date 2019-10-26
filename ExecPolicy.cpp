@@ -297,7 +297,7 @@ void DynamicExecPolicy::setup() {
 
 	deb("min=%d, max=%d", pdGPU.min_block * cfg.block_size, pdGPU.max_block * cfg.block_size);
 	//	std::printf("min=%d\n", pd.min_block * cfg.block_size);
-	assert(pdGPU.max_block <= cfg.eval_length);
+	assert(pdGPU.max_block <= cfg.num_blocks);
 }
 
 long MinExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
@@ -337,17 +337,17 @@ long QueueExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 		long nq = num_blocks * cfg.block_size;
 
 		if (num_blocks >= pdGPU.min_block) {
-			processed += pdGPU.min_block * cfg.block_size;
+			blocks_processed += pdGPU.min_block;
 			return pdGPU.min_block;
 		}
 
-		if (nq + processed == cfg.test_length) return num_blocks;
+		if (num_blocks + blocks_processed == cfg.num_blocks) return num_blocks;
 
 		//case 1: execute right now
 		auto queries_after_execute = pdGPU.times[num_blocks] / buffer.arrivalInterval();
 
 		if (queries_after_execute <= nq) {
-			processed += nq;
+			blocks_processed += num_blocks;
 			return num_blocks;
 		}
 
@@ -358,7 +358,7 @@ long QueueExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 		double increase_rate_wait = double(queries_after_wait - nq) / (buffer.arrivalInterval() + pdGPU.times[num_blocks + 1]);
 
 		if (increase_rate_execute <= increase_rate_wait) {
-			processed += nq;
+			blocks_processed +=  num_blocks;
 			return num_blocks;
 		}
 
@@ -375,11 +375,11 @@ long BestExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 		long nq = num_blocks * cfg.block_size;
 
 		if (num_blocks >= pdGPU.min_block) {
-			processed += pdGPU.min_block * cfg.block_size;
+			blocks_processed += pdGPU.min_block;
 			return pdGPU.min_block;
 		}
 
-		if (nq + processed == cfg.test_length) return num_blocks;
+		if (num_blocks + blocks_processed == cfg.num_blocks) return num_blocks;
 
 		//case 1: execute right now
 		auto queries_after_execute = pdGPU.times[num_blocks] / buffer.arrivalInterval();
@@ -393,7 +393,7 @@ long BestExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 		double increase_rate_wait = (queries_after_wait - nq) / time_after_wait;
 
 		if (increase_rate_execute <= increase_rate_wait) {
-			processed += nq;
+			blocks_processed += num_blocks;
 			return num_blocks;
 		}
 
@@ -408,11 +408,11 @@ long GeorgeExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 		long nq = num_blocks * cfg.block_size;
 
 		if (num_blocks >= pdGPU.min_block) {
-			processed += pdGPU.min_block * cfg.block_size;
+			blocks_processed += pdGPU.min_block;
 			return pdGPU.min_block;
 		}
 		
-		if (nq + processed == cfg.test_length) return num_blocks;
+		if (num_blocks + blocks_processed == cfg.num_blocks) return num_blocks;
 		
 		double time_to_max = (pdGPU.min_block - num_blocks) * buffer.arrivalInterval();
 		
@@ -420,7 +420,7 @@ long GeorgeExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 		double extra_time_execute = (pdGPU.times[num_blocks] - time_to_max) * (pdGPU.min_block - num_blocks);
 		
 		if (extra_time_execute < extra_time_wait) {
-			processed += nq;
+			blocks_processed += num_blocks;
 			return num_blocks;
 		} else {
 			return 0;
@@ -436,11 +436,11 @@ long QueueMaxExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 		long nq = num_blocks * cfg.block_size;
 
 		if (num_blocks >= pdGPU.max_block) {
-			processed += pdGPU.max_block * cfg.block_size;
+			blocks_processed += pdGPU.max_block;
 			return pdGPU.max_block;
 		}
 
-		if (nq + processed == cfg.test_length) return num_blocks;
+		if (num_blocks + blocks_processed == cfg.num_blocks) return num_blocks;
 
 		//case 1: execute right now
 		long queries_after_execute = pdGPU.times[num_blocks] / buffer.arrivalInterval();
@@ -449,7 +449,7 @@ long QueueMaxExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 		long queries_after_wait = pdGPU.times[num_blocks + 1] / buffer.arrivalInterval();
 
 		if (queries_after_execute <= nq) {
-			processed += nq;
+			blocks_processed += num_blocks;
 			return num_blocks;
 		}
 
@@ -462,7 +462,7 @@ long QueueMaxExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 		double increase_rate_wait = double(queries_after_wait - nq) / (buffer.arrivalInterval() + pdGPU.times[num_blocks + 1]);
 
 		if (increase_rate_execute <= increase_rate_wait) {
-			processed += nq;
+			blocks_processed += num_blocks;
 			return num_blocks;
 		}
 

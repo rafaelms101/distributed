@@ -35,8 +35,7 @@ struct Config {
 	const bool bench_cpu = true;
 	const long seed = 2;
 
-	const long test_length = 100000; //how many queries will be sent in total
-	const long eval_length = test_length; //of the sent queries, how many will be used to compute the average response time
+	long num_blocks = 100000 / block_size; 
 	
 	const long temp_memory_gpu = 0;
 	const long poisson_intervals = 100;

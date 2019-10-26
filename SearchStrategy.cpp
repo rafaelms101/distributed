@@ -5,8 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <unistd.h>
-
-#include "QueryQueue.h"
+#include "faiss/gpu/GpuAutoTune.h"
 
 SearchStrategy::SearchStrategy(int num_queues, float _base_start, float _base_end, faiss::gpu::StandardGpuResources* _res) :
 		base_start(_base_start), base_end(_base_end), res(_res) {
@@ -98,7 +97,7 @@ void SearchStrategy::merger() {
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.block_size * cfg.k];
 	float* D = new float[cfg.block_size * cfg.k];
 	
-	while (sent < cfg.test_length) {
+	while (sent < cfg.num_blocks * cfg.block_size) {
 		for (int i = 0; i < all_distance_buffers.size(); i++) {
 			all_distance_buffers[i]->waitForData(1);
 			all_label_buffers[i]->waitForData(1);
@@ -227,7 +226,7 @@ void HybridSearchStrategy::setup() {
 
 	gpu_index = dynamic_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % cfg.gpus_per_node, cpu_index[0], nullptr));
 	on_gpu = 0;
-	remaining_blocks = cfg.test_length / cfg.block_size * cpu_index.size();
+	remaining_blocks = cfg.num_blocks * cpu_index.size();
 }
 
 void CpuOnlySearchStrategy::setup() {
@@ -240,7 +239,7 @@ void CpuOnlySearchStrategy::start_search_process() {
 
 	long sent = 0;
 	
-	while (sent < cfg.test_length) {
+	while (sent < cfg.num_blocks * cfg.block_size) {
 		deb("waiting for queries");
 		long nblocks = std::min(query_buffer[0]->num_entries(), best_block_point_cpu);
 		
@@ -271,7 +270,7 @@ void GpuOnlySearchStrategy::setup() {
 
 	for (int i = 0; i < cfg.gpu_pieces; i++) {
 		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
-		remaining_blocks.push_back(cfg.test_length / cfg.block_size);
+		remaining_blocks.push_back(cfg.num_blocks);
 	}
 	
 	gpu_index = dynamic_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % cfg.gpus_per_node, cpu_index[0], nullptr));
@@ -344,7 +343,7 @@ void FixedSearchStrategy::process(faiss::Index* index, SyncBuffer* query_buffer,
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[cutoff_point * cfg.block_size * cfg.k];
 	float* D = new float[cutoff_point * cfg.block_size * cfg.k];
 	
-	long blocks_remaining = cfg.test_length / cfg.block_size;
+	long blocks_remaining = cfg.num_blocks;
 
 	while (blocks_remaining >= 1) {
 		query_buffer->waitForData(1);

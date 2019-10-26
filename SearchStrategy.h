@@ -3,7 +3,9 @@
 
 #include <map>
 
-#include "QueueManager.h"
+#include "faiss/gpu/StandardGpuResources.h"
+#include "faiss/gpu/GpuIndexIVFPQ.h"
+
 #include "SyncBuffer.h"
 #include "utils.h"
 
@@ -27,7 +29,7 @@ protected:
 	void load_bench_data(bool cpu, long& best);
 
 	void merge(long num_queries, std::vector<float*>& all_distances, std::vector<faiss::Index::idx_t*>& all_labels, float* distance_array, faiss::Index::idx_t* label_array);
-	void merge_procedure(long& buffer_start_id, long& sent, std::vector<Buffer*>& all_distance_buffers, std::vector<Buffer*>& all_label_buffers, Buffer& distance_buffer, Buffer& label_buffer);
+	void merge_procedure(long& buffer_start_id, long& sent, std::vector<SyncBuffer*>& all_distance_buffers, std::vector<SyncBuffer*>& all_label_buffers, SyncBuffer& distance_buffer, SyncBuffer& label_buffer);
 	void merger();
 	
 public:

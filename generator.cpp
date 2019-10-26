@@ -70,7 +70,7 @@ static double constant_interval(double val) {
 }
 
 static double poisson_constant_interval(double mean_interval) {
-	static int block_size = cfg.test_length / cfg.poisson_intervals;
+	static int block_size = cfg.num_blocks * cfg.block_size / cfg.poisson_intervals;
 	static int nq = block_size;
 	static double current_interval = 0;
 	
@@ -133,9 +133,9 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 	double total = 0;
 	double block_total = 0;
 	int nq_block = 0;
-	int block_size = cfg.test_length / cfg.poisson_intervals;
+	int block_size = cfg.num_blocks * cfg.block_size / cfg.poisson_intervals;
 	
-	for (int q = 0; q < cfg.eval_length; q++) {
+	for (int q = 0; q < cfg.num_blocks * cfg.block_size; q++) {
 		auto response_time = end_time[q] - start_time[q];
 		total += response_time;
 		block_total += response_time;
@@ -149,28 +149,26 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 		}
 	}
 	
-	std::printf("%lf\n", total / cfg.eval_length);
-	std::printf("%lf\n", end_time[cfg.eval_length - 1] - start_time[0]);
+	std::printf("%lf\n", total / (cfg.num_blocks * cfg.block_size));
+	std::printf("%lf\n", end_time[(cfg.num_blocks * cfg.block_size) - 1] - start_time[0]);
 	
 	std::fflush(stdout);
 }
 
 static void single_block_size_generator(int nshards, double* query_start_time, Config& cfg) {
-	assert(cfg.test_length % cfg.block_size == 0);
-	
 	float* xq = load_queries(cfg.d, cfg.nq);
-	float* query_buffer = new float[cfg.test_length * cfg.d];
+	float* query_buffer = new float[cfg.num_blocks * cfg.block_size * cfg.d];
 	float* to_be_deleted = query_buffer;
 	int queries_in_buffer = 0;
 	int qn = 0;
 	double begin_time = now();
 	
-	for (int i = 0; i < cfg.test_length; i++) {
+	for (int i = 0; i < cfg.num_blocks * cfg.block_size; i++) {
 		query_start_time[i] += begin_time;
 	}
 	
 	while (true) {
-		auto id = next_query(cfg.test_length, query_start_time, cfg);
+		auto id = next_query(cfg.num_blocks * cfg.block_size, query_start_time, cfg);
 
 		if (id == -1) continue;
 			
@@ -193,20 +191,20 @@ static void single_block_size_generator(int nshards, double* query_start_time, C
 
 	send_finished_signal(nshards);
 	
-	double end_time[cfg.eval_length];
-	MPI_Recv(end_time, cfg.eval_length, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	double end_time[cfg.num_blocks * cfg.block_size];
+	MPI_Recv(end_time, cfg.num_blocks * cfg.block_size, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-	compute_stats(&query_start_time[cfg.test_length - cfg.eval_length], end_time, cfg);
+	compute_stats(&query_start_time[0], end_time, cfg);
 	
 	delete [] to_be_deleted;
 	delete [] xq;
 }
 
 static double* query_start_time(double (*next_interval)(double), double param, Config& cfg) {
-	double* query_start = new double[cfg.test_length];
+	double* query_start = new double[cfg.num_blocks * cfg.block_size];
 	double time = 0;
 	
-	for (int i = 0; i < cfg.test_length; i++) {
+	for (int i = 0; i < cfg.num_blocks * cfg.block_size; i++) {
 		query_start[i] = time;
 		time += next_interval(param);
 	}

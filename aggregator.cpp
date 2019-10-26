@@ -99,8 +99,8 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 
 	int n_1 = 0, n_10 = 0, n_100 = 0;
 	
-	for (int i = cfg.test_length - cfg.eval_length; i < cfg.test_length; i++) {
-		int answer_id = i % cfg.eval_length;
+	for (int i = 0; i < cfg.num_blocks * cfg.block_size; i++) {
+		int answer_id = i % (cfg.num_blocks * cfg.block_size);
 		int nq = i % cfg.nq;
 		int gt_nn = gt[nq * cfg.k];
 		
@@ -121,12 +121,12 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 }
 
 void aggregator(int nshards, Config& cfg) {
-	auto target_delta = cfg.test_length / 10;
+	auto target_delta = cfg.num_blocks * cfg.block_size / 10;
 	auto target = target_delta;
 	
 	std::deque<double> end_times;
 
-	faiss::Index::idx_t* answers = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
+	faiss::Index::idx_t* answers = new faiss::Index::idx_t[cfg.num_blocks * cfg.block_size * cfg.k];
 	
 	std::queue<PartialResult> queue[nshards];
 	std::queue<PartialResult> to_delete;
@@ -176,10 +176,9 @@ void aggregator(int nshards, Config& cfg) {
 			
 			if (hasEmpty) break;
 
-			aggregate_query(queue, nshards, answers + (qn % cfg.eval_length) * cfg.k, cfg.k);
+			aggregate_query(queue, nshards, answers + (qn % (cfg.num_blocks * cfg.block_size)) * cfg.k, cfg.k);
 			qn++;
 			
-			if (end_times.size() >= cfg.eval_length) end_times.pop_front();
 			end_times.push_back(now());
 			
 			if (qn >= target) {
@@ -191,7 +190,7 @@ void aggregator(int nshards, Config& cfg) {
 	
 	if (cfg.exec_type != ExecType::Bench) {
 		show_recall(answers, cfg); 
-		send_times(end_times, cfg.eval_length);
+		send_times(end_times, cfg.num_blocks * cfg.block_size);
 	}
 	
 	deb("Finished aggregator");

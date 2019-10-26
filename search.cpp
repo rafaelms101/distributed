@@ -227,8 +227,8 @@ static void comm_handler_out(std::vector<SyncBuffer*>& query_buffers, SyncBuffer
 static void main_driver(bool& finished, SyncBuffer* query_buffer, SyncBuffer* label_buffer, SyncBuffer* distance_buffer, ExecPolicy* policy, long blocks_to_be_processed, faiss::Index* cpu_index, faiss::Index* gpu_index) {
 	deb("Starting to process queries");
 	
-	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.eval_length * cfg.k];
-	float* D = new float[cfg.eval_length * cfg.k];
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.num_blocks * cfg.block_size * cfg.k];
+	float* D = new float[cfg.num_blocks * cfg.block_size * cfg.k];
 	int processed = 0;
 	
 	while (! finished || query_buffer->num_entries() >= 1) {
@@ -274,7 +274,6 @@ void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long
 	SyncBuffer gpu_distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
 	SyncBuffer gpu_label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
 
-	assert(cfg.test_length % cfg.block_size == 0);
 	
 	faiss::Index* cpu_index = load_index(0, 1, cfg);
 	
@@ -312,7 +311,6 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	faiss::Index* cpu_index = load_index(0, 1, cfg);
 	faiss::Index* gpu_index = nullptr;
 		
-	assert(cfg.test_length % cfg.block_size == 0);
 
 	faiss::gpu::StandardGpuResources* res = nullptr;
 	

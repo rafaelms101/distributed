@@ -11,8 +11,6 @@
 #include "ExecPolicy.h"
 
 static void process_query_distribution(char** argv) {
-	assert(cfg.test_length % cfg.block_size == 0);
-	
 	cfg.query_load = std::atof(argv[1]);
 	
 	if (cfg.query_load < 0) {
@@ -180,9 +178,9 @@ int main(int argc, char* argv[]) {
     		assert(num_blocks >= 1);
     		search_single(shard, cfg.exec_policy, num_blocks);
     	} else if (cfg.exec_type == ExecType::Single) {
-    		search_single(shard, cfg.exec_policy, cfg.test_length / cfg.block_size);
+    		search_single(shard, cfg.exec_policy, cfg.num_blocks);
     	} else if (cfg.exec_type == ExecType::Both) {
-    		search_both(shard, new CPUGreedyPolicy(), cfg.exec_policy, cfg.test_length / cfg.block_size, cfg.gpu_throughput, cfg.cpu_throughput);
+    		search_both(shard, new CPUGreedyPolicy(), cfg.exec_policy, cfg.num_blocks, cfg.gpu_throughput, cfg.cpu_throughput);
     	} else if (cfg.exec_type == ExecType::OutOfCore) {
     		search_out(shard, cfg.search_algorithm);
     	}
