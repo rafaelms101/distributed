@@ -254,7 +254,7 @@ std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, Config& cfg) {
 }
 
 void BenchExecPolicy::cleanup(Config& cfg) {
-	store_profile_data(true, cfg);
+	if (cfg.bench_gpu) store_profile_data(true, cfg);
 	if (cfg.bench_cpu) store_profile_data(false, cfg);
 }
 
