@@ -31,17 +31,15 @@ struct Config {
 	const long nprobe = 16;
 	const long block_size = 5;
 	const long bench_step = block_size;
-
 	const long gpus_per_node = 1;
-	const bool bench_cpu = true;
 	const long seed = 2;
-
-	long num_blocks = 100000 / block_size; 
-	
 	const long temp_memory_gpu = 0;
 	const long poisson_intervals = 100;
 	
 	RequestDistribution request_distribution;
+	long num_blocks = 100000 / block_size; 
+	bool bench_cpu = false;
+	bool bench_gpu = false;
 	double query_load;
 	
 	

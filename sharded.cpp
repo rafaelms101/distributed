@@ -89,7 +89,7 @@ static void process_search_strategy(char** argv) {
 }
 
 static void handle_parameters(int argc, char* argv[], int shard) {
-	std::string usage = "./sharded b | sharded <c|p> <query_interval> <s|o> <alg params> | sharded <c|p> <query_interval> b <gpu_throughput> <cpu_throughput> <alg params>";
+	std::string usage = "./sharded b <cpu|gpu|both> | sharded <c|p> <query_interval> <s|o> <alg params> | sharded <c|p> <query_interval> b <gpu_throughput> <cpu_throughput> <alg params>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
@@ -97,8 +97,29 @@ static void handle_parameters(int argc, char* argv[], int shard) {
 	}
 
 	if (! strcmp("b", argv[1])) {
+		if (argc != 3) {
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::exit(-1);
+		}
+		
 		cfg.exec_type = ExecType::Bench;
 		cfg.exec_policy = new BenchExecPolicy();
+		
+		
+		
+		if (! strcmp("cpu", argv[2])) {
+			cfg.bench_cpu = true;
+			cfg.bench_gpu = false;
+		} else if (! strcmp("gpu", argv[2])) {
+			cfg.bench_cpu = false;
+			cfg.bench_gpu = true;
+		} else if (! strcmp("both", argv[2])) {
+			cfg.bench_cpu = true;
+			cfg.bench_gpu = true;
+		} else {
+			std::printf("Wrong arguments.\n%s\n", usage.c_str());
+			std::exit(-1);
+		}
 	} else {
 		if (argc < 5) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());
