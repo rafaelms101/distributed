@@ -22,98 +22,106 @@
 #include "ExecPolicy.h"
 #include "SearchStrategy.h"
 
-static void comm_handler_dup(std::vector<SyncBuffer*>& query_buffer, SyncBuffer* distance_buffer, SyncBuffer* label_buffer, Config& cfg) {
+static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_lock) {
 	deb("Receiver");
-	
+
 	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
-	
+
 	long blocks_received = 0;
-	long blocks_sent = 0;
-	
+
 	float dummy;
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 
 	deb("Now waiting for queries");
 
-	while (blocks_sent < cfg.num_blocks) {
-		if (blocks_received < cfg.num_blocks) {
-			MPI_Status status;
-			int message_arrived;
-			MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &message_arrived, &status);
+	MPI_Status status;
+	
+	while (blocks_received < cfg.num_blocks) {
+		mpi_lock.lock();
+		MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+		mpi_lock.unlock();
+		assert(status.MPI_ERROR == MPI_SUCCESS);
 
-			if (message_arrived) {
-				MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-				
-				for (auto buffer : query_buffer) {
-					buffer->insert(1, tmp_buffer);
-				}
-				
-				blocks_received++;
-
-				assert(status.MPI_ERROR == MPI_SUCCESS);
-				
-			}
+		for (auto buffer : query_buffer) {
+			buffer->insert(1, tmp_buffer);
 		}
-		
+
+		blocks_received++;
+	}
+
+	deb("Finished receiving queries");	
+}
+
+static void sender(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::mutex& mpi_lock) {
+	deb("Receiver");
+
+	long blocks_sent = 0;
+
+	deb("Now waiting for queries");
+
+	while (blocks_sent < cfg.num_blocks) {
 		auto ready = std::min(distance_buffer->num_entries(), label_buffer->num_entries());
 
 		if (ready >= 1) {
 			blocks_sent += ready;
-			
+
 			void* label_ptr = label_buffer->front();
 			void* dist_ptr = distance_buffer->front();
-			
+
 			//TODO: Optimize this to an Immediate Synchronous Send
+			mpi_lock.lock();
 			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
 			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+			mpi_lock.unlock();
 			
 			label_buffer->remove(ready);
 			distance_buffer->remove(ready);
 		}
 	}
 
-	deb("Finished receiving queries");	
+	deb("Finished receiving queries");
 }
 
-static void comm_handler_split(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer* gpu_buffer, SyncBuffer* cpu_distance_buffer, SyncBuffer* cpu_label_buffer, SyncBuffer* gpu_distance_buffer, SyncBuffer* gpu_label_buffer, Config& cfg) {
+static void receiver_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer* gpu_buffer, std::mutex& mpi_lock) {
 	deb("Receiver");
 	
 	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
 	
 	long blocks_received = 0;
-	long blocks_sent = 0;
 	int blocks_until_cpu = blocks_gpu;
 	
 	float dummy;
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 	
-	while (blocks_sent < cfg.num_blocks) {
-		if (blocks_received < cfg.num_blocks) {
-			MPI_Status status;
-			int message_arrived;
-			MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &message_arrived, &status);
-
-			if (message_arrived) {
-				if (blocks_until_cpu >= 1) {
-					MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-					gpu_buffer->insert(1, tmp_buffer);
-					blocks_received += 1;
-					
-					blocks_until_cpu--;
-					
-					assert(status.MPI_ERROR == MPI_SUCCESS);
-				} else {
-					MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-					cpu_buffer->insert(1, tmp_buffer);
-					blocks_received += 1;
-
-					blocks_until_cpu = blocks_gpu;
-					
-					assert(status.MPI_ERROR == MPI_SUCCESS);
-				}
-			}
+	MPI_Status status;
+	
+	while (blocks_received < cfg.num_blocks) {
+		mpi_lock.lock();
+		MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+		mpi_lock.unlock();
+		assert(status.MPI_ERROR == MPI_SUCCESS);
+		
+		if (blocks_until_cpu >= 1) {
+			gpu_buffer->insert(1, tmp_buffer);
+			blocks_until_cpu--;
+			
+		} else {
+			cpu_buffer->insert(1, tmp_buffer);
+			blocks_until_cpu = blocks_gpu;
 		}
 		
+		blocks_received += 1;
+	}
+	
+	deb("Finished receiving queries");	
+}
+
+static void sender_both(SyncBuffer* cpu_distance_buffer, SyncBuffer* cpu_label_buffer, SyncBuffer* gpu_distance_buffer, SyncBuffer* gpu_label_buffer, std::mutex& mpi_lock) {
+	deb("Sender");
+
+	long blocks_sent = 0;
+	
+	while (blocks_sent < cfg.num_blocks) {
 		auto readyGPU = std::min(gpu_distance_buffer->num_entries(), gpu_label_buffer->num_entries());
 
 		if (readyGPU >= 1) {
@@ -123,8 +131,10 @@ static void comm_handler_split(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffe
 			void* dist_ptr = gpu_distance_buffer->front();
 			
 			//TODO: Optimize this to an Immediate Synchronous Send
+			mpi_lock.lock();
 			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * readyGPU, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
 			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * readyGPU, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+			mpi_lock.unlock();
 			
 			gpu_label_buffer->remove(readyGPU);
 			gpu_distance_buffer->remove(readyGPU);
@@ -139,8 +149,10 @@ static void comm_handler_split(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffe
 			void* dist_ptr = cpu_distance_buffer->front();
 
 			//TODO: Optimize this to an Immediate Synchronous Send
+			mpi_lock.lock();
 			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * readyCPU, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
 			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * readyCPU, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+			mpi_lock.unlock();
 
 			cpu_label_buffer->remove(readyCPU);
 			cpu_distance_buffer->remove(readyCPU);
@@ -212,12 +224,15 @@ void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long
 	cpu_policy->setup();
 	gpu_policy->setup();
 	
-	std::thread receiver { comm_handler_split, gpu_blocks_per_cpu_block, &cpu_query_buffer, &gpu_query_buffer, &cpu_distance_buffer, &cpu_label_buffer, &gpu_distance_buffer, &gpu_label_buffer, std::ref(cfg) };	
+	std::mutex mpi_lock;
+	std::thread recv { receiver_both, gpu_blocks_per_cpu_block, &cpu_query_buffer, &gpu_query_buffer, std::ref(mpi_lock) };	
+	std::thread send { sender_both, &cpu_distance_buffer, &cpu_label_buffer, &gpu_distance_buffer, &gpu_label_buffer, std::ref(mpi_lock) };
 
 	std::thread gpu_thread { main_driver, &gpu_query_buffer, &gpu_label_buffer, &gpu_distance_buffer, gpu_policy, blocks_gpu, cpu_index, gpu_index };
 	std::thread cpu_thread { main_driver, &cpu_query_buffer, &cpu_label_buffer, &cpu_distance_buffer, cpu_policy, blocks_cpu, cpu_index, gpu_index };
 	
-	receiver.join();
+	recv.join();
+	send.join();
 	gpu_thread.join();
 	cpu_thread.join();
 }
@@ -251,11 +266,15 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	std::vector<SyncBuffer*> buffers;
 	buffers.push_back(&query_buffer);
 	
-	std::thread receiver { comm_handler_dup, std::ref(buffers), &distance_buffer, &label_buffer, std::ref(cfg) };
+	std::mutex mpi_lock;
+	
+	std::thread recv { receiver, std::ref(buffers), std::ref(mpi_lock) };
+	std::thread send { sender, &distance_buffer, &label_buffer, std::ref(mpi_lock) };
 	
 	main_driver(&query_buffer, &label_buffer, &distance_buffer, policy, num_blocks, cpu_index, gpu_index);
 
-	receiver.join();
+	recv.join();
+	send.join();
 }
 
 void search_out(int shard, SearchAlgorithm search_algorithm) {
@@ -281,9 +300,13 @@ void search_out(int shard, SearchAlgorithm search_algorithm) {
 
 	strategy->setup();
 
-	std::thread receiver { comm_handler_dup, std::ref(strategy->queryBuffers()), strategy->distanceBuffer(), strategy->labelBuffer(), std::ref(cfg) };
+	std::mutex mpi_lock;
+	
+	std::thread recv { receiver, std::ref(strategy->queryBuffers()), std::ref(mpi_lock) };
+	std::thread send { sender, strategy->distanceBuffer(), strategy->labelBuffer(), std::ref(mpi_lock) };
 
 	strategy->start_search_process();
 
-	receiver.join();
+	recv.join();
+	send.join();
 }
