@@ -38,7 +38,7 @@ static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_loc
 	
 	while (blocks_received < cfg.num_blocks) {
 		mpi_lock.lock();
-		MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+		MPI_Bcast(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, 0, cfg.search_comm);
 		mpi_lock.unlock();
 		assert(status.MPI_ERROR == MPI_SUCCESS);
 
@@ -97,7 +97,7 @@ static void receiver_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer* gp
 	
 	while (blocks_received < cfg.num_blocks) {
 		mpi_lock.lock();
-		MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+		MPI_Bcast(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, 0, cfg.search_comm);
 		mpi_lock.unlock();
 		assert(status.MPI_ERROR == MPI_SUCCESS);
 		

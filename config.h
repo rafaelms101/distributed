@@ -2,6 +2,7 @@
 #define CONFIG_H_
 
 #include <vector>
+#include <mpi.h>
 
 constexpr long BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
 
@@ -58,6 +59,8 @@ struct Config {
 	SearchAlgorithm search_algorithm;
 	
 	int shard;
+	
+	MPI_Comm search_comm;
 };
 
 extern Config cfg;

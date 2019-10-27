@@ -150,8 +150,7 @@ int main(int argc, char* argv[]) {
     int ranks[] = {0};
     MPI_Group_excl(world_group, 1, ranks, &search_group);
     
-    MPI_Comm search_comm;
-    MPI_Comm_create_group(MPI_COMM_WORLD, search_group, 0, &search_comm);
+    MPI_Comm_create_group(MPI_COMM_WORLD, search_group, 0, &cfg.search_comm);
     
     
     int shard = world_rank - 2;

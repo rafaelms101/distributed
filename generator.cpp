@@ -59,10 +59,8 @@ static float* load_queries(int d, int nq) {
 	return xq;
 }
 
-static void send_queries(int nshards, float* query_buffer, int queries_in_buffer, int d) {
-	for (int node = 0; node < nshards; node++) {
-		MPI_Ssend(query_buffer, queries_in_buffer * d, MPI_FLOAT, node + 2, 0, MPI_COMM_WORLD);
-	}
+static void send_queries(int nshards, float* query_buffer, int d) {
+	MPI_Bcast(query_buffer, cfg.block_size * d, MPI_FLOAT, 0, cfg.search_comm);
 }
 
 static double constant_interval(double val) {
@@ -112,7 +110,7 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 		
 		for (int repeats = 1; repeats <= BENCH_REPEATS; repeats++) {
 			for (int b = 1; b <= num_blocks; b++) {
-				send_queries(nshards, xq, cfg.block_size, cfg.d);
+				send_queries(nshards, xq, cfg.d);
 			}
 		}
 
@@ -164,7 +162,7 @@ static void single_block_size_generator(int nshards, double* query_start_time, C
 		if (id == -1) continue;
 			
 		if (id == -2) {
-			if (queries_in_buffer >= 1) send_queries(nshards, query_buffer, queries_in_buffer, cfg.d);
+			if (queries_in_buffer >= 1) send_queries(nshards, query_buffer, cfg.d);
 			break;
 		}
 
@@ -175,7 +173,7 @@ static void single_block_size_generator(int nshards, double* query_start_time, C
 
 		if (queries_in_buffer < cfg.block_size) continue;
 
-		send_queries(nshards, query_buffer, queries_in_buffer, cfg.d);
+		send_queries(nshards, query_buffer, cfg.d);
 		query_buffer = query_buffer + queries_in_buffer * cfg.d;
 		queries_in_buffer = 0;
 	}
