@@ -101,13 +101,6 @@ static int next_query(const int test_length, double* start_query_time, Config& c
 	return (qn - 1) % cfg.nq; 
 }
 
-static void send_finished_signal(int nshards) {
-	float dummy = 1;
-	for (int node = 0; node < nshards; node++) {
-		MPI_Ssend(&dummy, 1, MPI_FLOAT, node + 2, 0, MPI_COMM_WORLD);
-	}
-}
-
 static void bench_generator(int num_queries, int nshards, Config& cfg) {
 	float* xq = load_queries(cfg.d, cfg.nq);
 	int nq = cfg.bench_step;
@@ -125,8 +118,6 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 
 		nq += cfg.bench_step; 
 	}
-
-	send_finished_signal(nshards);
 }
 
 static void compute_stats(double* start_time, double* end_time, Config& cfg) {
@@ -189,8 +180,6 @@ static void single_block_size_generator(int nshards, double* query_start_time, C
 		queries_in_buffer = 0;
 	}
 
-	send_finished_signal(nshards);
-	
 	double end_time[cfg.num_blocks * cfg.block_size];
 	MPI_Recv(end_time, cfg.num_blocks * cfg.block_size, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 

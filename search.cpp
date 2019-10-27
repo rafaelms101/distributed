@@ -22,47 +22,43 @@
 #include "ExecPolicy.h"
 #include "SearchStrategy.h"
 
-static void comm_handler_single(SyncBuffer* query_buffer, SyncBuffer* distance_buffer, SyncBuffer* label_buffer, bool& finished_receiving, Config& cfg) {
+static void comm_handler_dup(std::vector<SyncBuffer*>& query_buffer, SyncBuffer* distance_buffer, SyncBuffer* label_buffer, Config& cfg) {
 	deb("Receiver");
 	
 	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
 	
-	long queries_received = 0;
-	long queries_sent = 0;
+	long blocks_received = 0;
+	long blocks_sent = 0;
 	
 	float dummy;
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 
 	deb("Now waiting for queries");
 
-	while (! finished_receiving || queries_sent < queries_received) {
-		if (! finished_receiving) {
+	while (blocks_sent < cfg.num_blocks) {
+		if (blocks_received < cfg.num_blocks) {
 			MPI_Status status;
 			int message_arrived;
 			MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &message_arrived, &status);
 
 			if (message_arrived) {
-				int message_size;
-				MPI_Get_count(&status, MPI_FLOAT, &message_size);
-
-				if (message_size == 1) {
-					finished_receiving = true;
-					float dummy;
-					MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-				} else {
-					MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-					query_buffer->insert(1, tmp_buffer);
-					queries_received += cfg.block_size;
-					
-					assert(status.MPI_ERROR == MPI_SUCCESS);
+				MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
+				
+				for (auto buffer : query_buffer) {
+					buffer->insert(1, tmp_buffer);
 				}
+				
+				blocks_received++;
+
+				assert(status.MPI_ERROR == MPI_SUCCESS);
+				
 			}
 		}
 		
 		auto ready = std::min(distance_buffer->num_entries(), label_buffer->num_entries());
 
 		if (ready >= 1) {
-			queries_sent += ready * cfg.block_size;
+			blocks_sent += ready;
 			
 			void* label_ptr = label_buffer->front();
 			void* dist_ptr = distance_buffer->front();
@@ -76,40 +72,32 @@ static void comm_handler_single(SyncBuffer* query_buffer, SyncBuffer* distance_b
 		}
 	}
 
-	MPI_Ssend(&dummy, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
 	deb("Finished receiving queries");	
 }
 
-static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer* gpu_buffer, SyncBuffer* cpu_distance_buffer, SyncBuffer* cpu_label_buffer, SyncBuffer* gpu_distance_buffer, SyncBuffer* gpu_label_buffer, bool& finished_receiving, Config& cfg) {
+static void comm_handler_split(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer* gpu_buffer, SyncBuffer* cpu_distance_buffer, SyncBuffer* cpu_label_buffer, SyncBuffer* gpu_distance_buffer, SyncBuffer* gpu_label_buffer, Config& cfg) {
 	deb("Receiver");
 	
 	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
 	
-	long queries_received = 0;
-	long queries_sent = 0;
+	long blocks_received = 0;
+	long blocks_sent = 0;
 	int blocks_until_cpu = blocks_gpu;
 	
 	float dummy;
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 	
-	while (! finished_receiving || queries_sent < queries_received) {
-		if (! finished_receiving) {
+	while (blocks_sent < cfg.num_blocks) {
+		if (blocks_received < cfg.num_blocks) {
 			MPI_Status status;
 			int message_arrived;
 			MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &message_arrived, &status);
 
 			if (message_arrived) {
-				int message_size;
-				MPI_Get_count(&status, MPI_FLOAT, &message_size);
-
-				if (message_size == 1) {
-					finished_receiving = true;
-					float dummy;
-					MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-				} else if (blocks_until_cpu >= 1) {
+				if (blocks_until_cpu >= 1) {
 					MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
 					gpu_buffer->insert(1, tmp_buffer);
-					queries_received += cfg.block_size;
+					blocks_received += 1;
 					
 					blocks_until_cpu--;
 					
@@ -117,7 +105,7 @@ static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer
 				} else {
 					MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
 					cpu_buffer->insert(1, tmp_buffer);
-					queries_received += cfg.block_size;
+					blocks_received += 1;
 
 					blocks_until_cpu = blocks_gpu;
 					
@@ -129,7 +117,7 @@ static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer
 		auto readyGPU = std::min(gpu_distance_buffer->num_entries(), gpu_label_buffer->num_entries());
 
 		if (readyGPU >= 1) {
-			queries_sent += readyGPU * cfg.block_size;
+			blocks_sent += readyGPU;
 			
 			void* label_ptr = gpu_label_buffer->front();
 			void* dist_ptr = gpu_distance_buffer->front();
@@ -145,7 +133,7 @@ static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer
 		auto readyCPU = std::min(cpu_distance_buffer->num_entries(), cpu_label_buffer->num_entries());
 
 		if (readyCPU >= 1) {
-			queries_sent += readyCPU * cfg.block_size;
+			blocks_sent += readyCPU;
 
 			void* label_ptr = cpu_label_buffer->front();
 			void* dist_ptr = cpu_distance_buffer->front();
@@ -158,80 +146,17 @@ static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer
 			cpu_distance_buffer->remove(readyCPU);
 		}
 	}
-
-	MPI_Ssend(&dummy, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+	
 	deb("Finished receiving queries");	
 }
 
-static void comm_handler_out(std::vector<SyncBuffer*>& query_buffers, SyncBuffer* distance_buffer, SyncBuffer* label_buffer, bool& finished_receiving, Config& cfg) {
-	deb("Receiver");
-	
-	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
-	
-	long queries_received = 0;
-	long queries_sent = 0;
-	
-	float dummy;
-	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
-
-	deb("Now waiting for queries");
-
-	while (! finished_receiving || queries_sent < queries_received) {
-		if (! finished_receiving) {
-			MPI_Status status;
-			int message_arrived;
-			MPI_Iprobe(GENERATOR, 0, MPI_COMM_WORLD, &message_arrived, &status);
-
-			if (message_arrived) {
-				int message_size;
-				MPI_Get_count(&status, MPI_FLOAT, &message_size);
-
-				if (message_size == 1) {
-					finished_receiving = true;
-					float dummy;
-					MPI_Recv(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-				} else {
-					MPI_Recv(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD, &status);
-					
-					for (auto buffer : query_buffers) {
-						buffer->insert(1, tmp_buffer);
-					}
-					
-					queries_received += cfg.block_size;
-					assert(status.MPI_ERROR == MPI_SUCCESS);
-				}
-			}
-		}
-		
-		auto ready = std::min(distance_buffer->num_entries(), label_buffer->num_entries());
-
-		if (ready >= 1) {
-			queries_sent += ready * cfg.block_size;
-			
-			void* label_ptr = label_buffer->front();
-			void* dist_ptr = distance_buffer->front();
-			
-			//TODO: Optimize this to an Immediate Synchronous Send
-			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
-			
-			label_buffer->remove(ready);
-			distance_buffer->remove(ready);
-		}
-	}
-
-	MPI_Ssend(&dummy, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-	deb("Finished receiving queries");	
-}
-
-static void main_driver(bool& finished, SyncBuffer* query_buffer, SyncBuffer* label_buffer, SyncBuffer* distance_buffer, ExecPolicy* policy, long blocks_to_be_processed, faiss::Index* cpu_index, faiss::Index* gpu_index) {
+static void main_driver(SyncBuffer* query_buffer, SyncBuffer* label_buffer, SyncBuffer* distance_buffer, ExecPolicy* policy, long blocks_to_be_processed, faiss::Index* cpu_index, faiss::Index* gpu_index) {
 	deb("Starting to process queries");
 	
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.num_blocks * cfg.block_size * cfg.k];
 	float* D = new float[cfg.num_blocks * cfg.block_size * cfg.k];
-	int processed = 0;
 	
-	while (! finished || query_buffer->num_entries() >= 1) {
+	while (blocks_to_be_processed > 0) {
 		long num_blocks = policy->numBlocksRequired(*query_buffer, cfg);
 		num_blocks = std::min(num_blocks, blocks_to_be_processed);
 		
@@ -247,7 +172,6 @@ static void main_driver(bool& finished, SyncBuffer* query_buffer, SyncBuffer* la
 		int nqueries = num_blocks * cfg.block_size;
 
 		policy->process_buffer(cpu_index, gpu_index, nqueries, *query_buffer, I, D);
-		processed += nqueries;
 		
 		deb("Processed %d queries. %d already processed. %d left to be processed",  nqueries, processed, blocks_to_be_processed);
 
@@ -288,11 +212,10 @@ void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long
 	cpu_policy->setup();
 	gpu_policy->setup();
 	
-	bool finished = false;
-	std::thread receiver { comm_handler_both, gpu_blocks_per_cpu_block, &cpu_query_buffer, &gpu_query_buffer, &cpu_distance_buffer, &cpu_label_buffer, &gpu_distance_buffer, &gpu_label_buffer, std::ref(finished), std::ref(cfg) };	
+	std::thread receiver { comm_handler_split, gpu_blocks_per_cpu_block, &cpu_query_buffer, &gpu_query_buffer, &cpu_distance_buffer, &cpu_label_buffer, &gpu_distance_buffer, &gpu_label_buffer, std::ref(cfg) };	
 
-	std::thread gpu_thread { main_driver, std::ref(finished), &gpu_query_buffer, &gpu_label_buffer, &gpu_distance_buffer, gpu_policy, blocks_gpu, cpu_index, gpu_index };
-	std::thread cpu_thread { main_driver, std::ref(finished), &cpu_query_buffer, &cpu_label_buffer, &cpu_distance_buffer, cpu_policy, blocks_cpu, cpu_index, gpu_index };
+	std::thread gpu_thread { main_driver, &gpu_query_buffer, &gpu_label_buffer, &gpu_distance_buffer, gpu_policy, blocks_gpu, cpu_index, gpu_index };
+	std::thread cpu_thread { main_driver, &cpu_query_buffer, &cpu_label_buffer, &cpu_distance_buffer, cpu_policy, blocks_cpu, cpu_index, gpu_index };
 	
 	receiver.join();
 	gpu_thread.join();
@@ -325,10 +248,12 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 
 	policy->setup();
 	
-	bool finished = false;
-	std::thread receiver { comm_handler_single, &query_buffer, &distance_buffer, &label_buffer, std::ref(finished), std::ref(cfg) };
+	std::vector<SyncBuffer*> buffers;
+	buffers.push_back(&query_buffer);
 	
-	main_driver(finished, &query_buffer, &label_buffer, &distance_buffer, policy, num_blocks, cpu_index, gpu_index);
+	std::thread receiver { comm_handler_dup, std::ref(buffers), &distance_buffer, &label_buffer, std::ref(cfg) };
+	
+	main_driver(&query_buffer, &label_buffer, &distance_buffer, policy, num_blocks, cpu_index, gpu_index);
 
 	receiver.join();
 }
@@ -356,8 +281,7 @@ void search_out(int shard, SearchAlgorithm search_algorithm) {
 
 	strategy->setup();
 
-	bool finished = false;
-	std::thread receiver { comm_handler_out, std::ref(strategy->queryBuffers()), strategy->distanceBuffer(), strategy->labelBuffer(), std::ref(finished), std::ref(cfg) };
+	std::thread receiver { comm_handler_dup, std::ref(strategy->queryBuffers()), strategy->distanceBuffer(), strategy->labelBuffer(), std::ref(cfg) };
 
 	strategy->start_search_process();
 

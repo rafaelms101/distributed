@@ -161,6 +161,15 @@ int main(int argc, char* argv[]) {
     
     srand(cfg.seed);
     
+    if (cfg.exec_type == ExecType::Bench) {
+		assert(BENCH_SIZE % cfg.block_size == 0);
+
+		long n = BENCH_SIZE / cfg.bench_step;
+		cfg.num_blocks = BENCH_REPEATS * cfg.bench_step * n * (n + 1) / 2 / cfg.block_size;
+		
+		assert(cfg.num_blocks >= 1);
+    }
+    
     //TODO: remember to pass the right amount of blocks in the bench case
     if (world_rank == 1) {
     	generator(world_size - 2, cfg);
@@ -171,11 +180,6 @@ int main(int argc, char* argv[]) {
     	cfg.shard = shard;
     	
     	if (cfg.exec_type == ExecType::Bench) {
-    		assert(BENCH_SIZE % cfg.block_size == 0);
-    		
-    		long n = BENCH_SIZE / cfg.bench_step;
-    		cfg.num_blocks = BENCH_REPEATS * cfg.bench_step * n * (n + 1) / 2 / cfg.block_size;
-    		assert(cfg.num_blocks >= 1);
     		search_single(shard, cfg.exec_policy, cfg.num_blocks);
     	} else if (cfg.exec_type == ExecType::Single) {
     		search_single(shard, cfg.exec_policy, cfg.num_blocks);

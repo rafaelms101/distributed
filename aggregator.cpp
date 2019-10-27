@@ -132,24 +132,16 @@ void aggregator(int nshards, Config& cfg) {
 	std::queue<PartialResult> to_delete;
 	
 	deb("Aggregator node is ready");
-	
-	int shards_finished = 0;
-	
+
+	long queries_remaining = cfg.num_blocks * cfg.block_size;
 	long qn = 0;
-	while (true) {
+	
+	while (queries_remaining >= 1) {
 		MPI_Status status;
 		MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
 
 		int message_size;
 		MPI_Get_count(&status, MPI_LONG, &message_size);
-		
-		if (message_size == 1) {
-			shards_finished++;
-			float dummy;
-			MPI_Recv(&dummy, 1, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-			if (shards_finished == nshards) break;
-			continue;
-		}
 
 		int qty = message_size / cfg.k;
 
@@ -177,12 +169,13 @@ void aggregator(int nshards, Config& cfg) {
 			if (hasEmpty) break;
 
 			aggregate_query(queue, nshards, answers + (qn % (cfg.num_blocks * cfg.block_size)) * cfg.k, cfg.k);
+			queries_remaining--;
 			qn++;
 			
 			end_times.push_back(now());
 			
 			if (qn >= target) {
-				std::printf("%d queries processed\n", qn);
+				std::printf("%d queries remaining\n", queries_remaining);
 				target += target_delta;
 			}
 		}
