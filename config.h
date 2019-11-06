@@ -58,6 +58,8 @@ struct Config {
 	
 	int shard;
 	
+	double raw_search_time = 0;
+	
 	MPI_Comm search_comm;
 };
 

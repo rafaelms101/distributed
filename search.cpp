@@ -23,6 +23,8 @@
 #include "SearchStrategy.h"
 
 static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_lock) {
+	double time = 0;
+	
 	deb("Receiver");
 
 	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
@@ -30,11 +32,13 @@ static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_loc
 	long blocks_received = 0;
 
 	float dummy;
-	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
+	MPI_Ssend(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 
 	deb("Now waiting for queries");
 
 	MPI_Status status;
+	
+	double before = now();
 	
 	while (blocks_received < cfg.num_blocks) {
 		mpi_lock.lock();
@@ -48,11 +52,12 @@ static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_loc
 
 		blocks_received++;
 	}
-
+	
 	deb("Finished receiving queries");	
 }
 
 static void sender(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::mutex& mpi_lock) {
+	double time = 0;
 	deb("Receiver");
 
 	long blocks_sent = 0;
@@ -60,9 +65,13 @@ static void sender(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::m
 	deb("Now waiting for queries");
 
 	while (blocks_sent < cfg.num_blocks) {
+		distance_buffer->waitForData(1);
+		label_buffer->waitForData(1);
 		auto ready = std::min(distance_buffer->num_entries(), label_buffer->num_entries());
 
 		if (ready >= 1) {
+			double before = now();
+			
 			blocks_sent += ready;
 
 			void* label_ptr = label_buffer->front();
@@ -70,12 +79,14 @@ static void sender(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::m
 
 			//TODO: Optimize this to an Immediate Synchronous Send
 			mpi_lock.lock();
-			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+			MPI_Send(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+			MPI_Send(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
 			mpi_lock.unlock();
 			
 			label_buffer->remove(ready);
 			distance_buffer->remove(ready);
+			
+			time += now() - before;
 		}
 	}
 
@@ -163,6 +174,10 @@ static void sender_both(SyncBuffer* cpu_distance_buffer, SyncBuffer* cpu_label_b
 }
 
 static void main_driver(SyncBuffer* query_buffer, SyncBuffer* label_buffer, SyncBuffer* distance_buffer, ExecPolicy* policy, long blocks_to_be_processed, faiss::Index* cpu_index, faiss::Index* gpu_index) {
+	long nq = 0;
+	
+	auto before = now();
+	
 	deb("Starting to process queries");
 	
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.num_blocks * cfg.block_size * cfg.k];
@@ -183,6 +198,8 @@ static void main_driver(SyncBuffer* query_buffer, SyncBuffer* label_buffer, Sync
 		blocks_to_be_processed -= num_blocks;
 		int nqueries = num_blocks * cfg.block_size;
 
+		nq += nqueries;
+		
 		policy->process_buffer(cpu_index, gpu_index, nqueries, *query_buffer, I, D);
 		
 		deb("Processed %d queries. %d already processed. %d left to be processed",  nqueries, processed, blocks_to_be_processed);
@@ -195,6 +212,8 @@ static void main_driver(SyncBuffer* query_buffer, SyncBuffer* label_buffer, Sync
 	delete[] D;
 	
 	policy->cleanup(cfg);
+	
+	std::printf("%d) Search node took %lf. Raw time: %lf. Queries: %ld\n", cfg.shard, now() - before, cfg.raw_search_time, nq);
 }
 
 void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long num_blocks, double gpu_throughput, double cpu_throughput) {
@@ -266,6 +285,7 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	std::vector<SyncBuffer*> buffers;
 	buffers.push_back(&query_buffer);
 	
+	double before = now();
 	std::mutex mpi_lock;
 	
 	std::thread recv { receiver, std::ref(buffers), std::ref(mpi_lock) };

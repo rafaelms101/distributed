@@ -266,7 +266,9 @@ void GPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index,
 
 void CPUPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& buffer, faiss::Index::idx_t* I, float* D) {
 	float* query_buffer = (float*) buffer.front();
+	auto before = now();
 	cpu_index->search(nq, query_buffer, cfg.k, D, I);
+	cfg.raw_search_time += now() - before;
 	buffer.remove(nq / cfg.block_size);
 }
 

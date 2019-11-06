@@ -113,9 +113,9 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 		}
 	}
 
-	deb("R@1 = %.4f", n_1 / float(cfg.eval_length));
-	deb("R@10 = %.4f", n_10 / float(cfg.eval_length));
-	deb("R@100 = %.4f", n_100 / float(cfg.eval_length));
+	deb("R@1 = %.4f", n_1 / float(cfg.num_blocks * cfg.block_size));
+	deb("R@10 = %.4f", n_10 / float(cfg.num_blocks * cfg.block_size));
+	deb("R@100 = %.4f", n_100 / float(cfg.num_blocks * cfg.block_size));
 	
 	delete [] gt;
 }
@@ -136,25 +136,38 @@ void aggregator(int nshards, Config& cfg) {
 	long queries_remaining = cfg.num_blocks * cfg.block_size;
 	long qn = 0;
 	
+	double time = 0;
+	
+	std::vector<long> remaining_queries_per_shard(nshards);
+	for (int shard = 0; shard < nshards; shard++) {
+		remaining_queries_per_shard[shard] = cfg.num_blocks * cfg.block_size;
+	}
+	
 	while (queries_remaining >= 1) {
-		MPI_Status status;
-		MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+		for (int shard = 0; shard < nshards; shard++) {
+			if (remaining_queries_per_shard[shard] == 0) continue;
+			
+			MPI_Status status;
+			MPI_Probe(2 + shard, 0, MPI_COMM_WORLD, &status);
+			
+			int message_size;
+			MPI_Get_count(&status, MPI_LONG, &message_size);
 
-		int message_size;
-		MPI_Get_count(&status, MPI_LONG, &message_size);
+			int qty = message_size / cfg.k;
+			remaining_queries_per_shard[shard] -= qty;
 
-		int qty = message_size / cfg.k;
-
-		auto I = new faiss::Index::idx_t[cfg.k * qty];
-		auto D = new float[cfg.k * qty];
-		
-		MPI_Recv(I, cfg.k * qty, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		MPI_Recv(D, cfg.k * qty, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		
-		int from = status.MPI_SOURCE - 2;
-		for (int q = 0; q < qty; q++) {
-			queue[from].push({D + cfg.k * q, I + cfg.k * q, q == qty - 1, D, I});
+			auto I = new faiss::Index::idx_t[cfg.k * qty];
+			auto D = new float[cfg.k * qty];
+			
+			MPI_Recv(I, cfg.k * qty, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			MPI_Recv(D, cfg.k * qty, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			
+			int from = status.MPI_SOURCE - 2;
+			for (int q = 0; q < qty; q++) {
+				queue[from].push({D + cfg.k * q, I + cfg.k * q, q == qty - 1, D, I});
+			}
 		}
+		
 
 		while (true) {
 			bool hasEmpty = false;
@@ -168,6 +181,8 @@ void aggregator(int nshards, Config& cfg) {
 			
 			if (hasEmpty) break;
 
+			double before = now();
+			
 			aggregate_query(queue, nshards, answers + (qn % (cfg.num_blocks * cfg.block_size)) * cfg.k, cfg.k);
 			queries_remaining--;
 			qn++;
@@ -178,8 +193,12 @@ void aggregator(int nshards, Config& cfg) {
 				std::printf("%d queries remaining\n", queries_remaining);
 				target += target_delta;
 			}
+			
+			time += now() - before;
 		}
 	}
+	
+	std::printf("aggregating took %lf\n", time);
 	
 	if (cfg.exec_type != ExecType::Bench) {
 		show_recall(answers, cfg); 

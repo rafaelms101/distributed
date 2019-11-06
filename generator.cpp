@@ -99,11 +99,25 @@ static int next_query(const int test_length, double* start_query_time, Config& c
 	return (qn - 1) % cfg.nq; 
 }
 
+
+static void waitUntilSearchNodesAreReady(long nshards) {
+	int shards_ready = 0;
+	
+	while (shards_ready < nshards) {
+		float dummy;
+		MPI_Recv(&dummy, 1, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD,
+				MPI_STATUS_IGNORE);
+		shards_ready++;
+	}
+}
+
 static void bench_generator(int num_queries, int nshards, Config& cfg) {
 	float* xq = load_queries(cfg.d, cfg.nq);
 	int nq = cfg.bench_step;
 	
 	assert(num_queries % cfg.bench_step == 0);
+	
+	waitUntilSearchNodesAreReady(nshards);
 	
 	while (nq <= num_queries) {
 		auto num_blocks = nq / cfg.block_size;
@@ -126,6 +140,7 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 	
 	for (int q = 0; q < cfg.num_blocks * cfg.block_size; q++) {
 		auto response_time = end_time[q] - start_time[q];
+
 		total += response_time;
 		block_total += response_time;
 		nq_block++;
@@ -150,11 +165,17 @@ static void single_block_size_generator(int nshards, double* query_start_time, C
 	float* to_be_deleted = query_buffer;
 	int queries_in_buffer = 0;
 	int qn = 0;
+	
+	
+	waitUntilSearchNodesAreReady(nshards);
+
 	double begin_time = now();
 	
 	for (int i = 0; i < cfg.num_blocks * cfg.block_size; i++) {
 		query_start_time[i] += begin_time;
 	}
+	
+	double before = now();
 	
 	while (true) {
 		auto id = next_query(cfg.num_blocks * cfg.block_size, query_start_time, cfg);
@@ -178,6 +199,8 @@ static void single_block_size_generator(int nshards, double* query_start_time, C
 		queries_in_buffer = 0;
 	}
 
+	std::printf("Sending took %lf time\n", now() - before);
+	
 	double end_time[cfg.num_blocks * cfg.block_size];
 	MPI_Recv(end_time, cfg.num_blocks * cfg.block_size, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
@@ -233,15 +256,6 @@ void generator(int nshards, Config& cfg) {
 				break;
 			}
 		}
-	}
-	
-	int shards_ready = 0;
-	
-	//Waiting for search nodes to be ready
-	while (shards_ready < nshards) {
-		float dummy;
-		MPI_Recv(&dummy, 1, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		shards_ready++;
 	}
 
 	if (cfg.exec_type == ExecType::Bench) bench_generator(BENCH_SIZE, nshards, cfg);
