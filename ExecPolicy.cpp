@@ -162,7 +162,7 @@ void BenchExecPolicy::process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_
 	float* query_buffer = (float*) buffer.front();
 
 	//now we proccess our query buffer
-	if (! finished_gpu) {
+	if (cfg.bench_gpu && ! finished_gpu) {
 		auto before = now();
 		gpu_index->search(nq, query_buffer, cfg.k, D, I);
 		auto time_spent = now() - before;
