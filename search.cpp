@@ -11,9 +11,10 @@
 #include "faiss/IndexFlat.h"
 #include "faiss/IndexIVFPQ.h"
 
-#include "../faiss/gpu/GpuAutoTune.h"
-#include "../faiss/gpu/StandardGpuResources.h"
-#include "../faiss/gpu/GpuIndexIVFPQ.h"
+#include "faiss/gpu/GpuAutoTune.h"
+#include "faiss/gpu/GpuCloner.h"
+#include "faiss/gpu/StandardGpuResources.h"
+#include "faiss/gpu/GpuIndexIVFPQ.h"
 
 #include "utils.h"
 #include "Buffer.h"
@@ -202,7 +203,7 @@ static void main_driver(SyncBuffer* query_buffer, SyncBuffer* label_buffer, Sync
 		
 		policy->process_buffer(cpu_index, gpu_index, nqueries, *query_buffer, I, D);
 		
-		deb("Processed %d queries. %d already processed. %d left to be processed",  nqueries, processed, blocks_to_be_processed);
+		deb("Processed %d queries. %d already processed. %d left to be processed",  nqueries, nq, blocks_to_be_processed * cfg.block_size);
 
 		label_buffer->insert(num_blocks, (byte*) I);
 		distance_buffer->insert(num_blocks, (byte*) D);

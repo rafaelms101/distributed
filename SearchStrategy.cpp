@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <unistd.h>
-#include "faiss/gpu/GpuAutoTune.h"
+#include "faiss/gpu/GpuCloner.h"
 
 SearchStrategy::SearchStrategy(int num_queues, float _base_start, float _base_end, faiss::gpu::StandardGpuResources* _res) :
 		base_start(_base_start), base_end(_base_end), res(_res) {

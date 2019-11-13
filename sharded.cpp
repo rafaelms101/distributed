@@ -189,12 +189,12 @@ int main(int argc, char* argv[]) {
 		
 		assert(cfg.num_blocks >= 1);
     }
-    
-    //TODO: remember to pass the right amount of blocks in the bench case
+//    
+//    //TODO: remember to pass the right amount of blocks in the bench case
     if (world_rank == 1) {
-    	generator(world_size - 2, cfg);
+    	generator(nshards, cfg);
     } else if (world_rank == 0) {
-    	aggregator(world_size - 2, cfg);
+    	aggregator(nshards, cfg);
     } else {
     	logSearchStart(shard);
     	cfg.shard = shard;

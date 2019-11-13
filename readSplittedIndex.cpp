@@ -1,7 +1,7 @@
 #include "readSplittedIndex.h"
 
 #include <faiss/index_io.h>
-#include "faiss/FaissAssert.h"
+#include <faiss/impl/FaissAssert.h>
 #include "faiss/IndexFlat.h"
 
 #define WRITEANDCHECK(ptr, n) {                             \
