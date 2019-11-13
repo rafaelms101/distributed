@@ -286,7 +286,6 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	std::vector<SyncBuffer*> buffers;
 	buffers.push_back(&query_buffer);
 	
-	double before = now();
 	std::mutex mpi_lock;
 	
 	std::thread recv { receiver, std::ref(buffers), std::ref(mpi_lock) };
