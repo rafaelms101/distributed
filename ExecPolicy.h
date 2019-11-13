@@ -110,7 +110,7 @@ public:
 	
 	void process_buffer(faiss::Index* cpu_index, faiss::Index* gpu_index, long nq, SyncBuffer& SyncBuffer, faiss::Index::idx_t* I, float* D);
 	static std::vector<double> load_prof_times(bool gpu, Config& cfg);
-	bool usesGPU() { return true; }
+	bool usesGPU() { return cfg.bench_gpu; }
 };
 
 
