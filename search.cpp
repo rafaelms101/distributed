@@ -59,11 +59,11 @@ static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_loc
 
 static void sender(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::mutex& mpi_lock) {
 	double time = 0;
-	deb("Receiver");
+	deb("Sender");
 
 	long blocks_sent = 0;
 
-	deb("Now waiting for queries");
+	deb("Now waiting for results");
 
 	while (blocks_sent < cfg.num_blocks) {
 		distance_buffer->waitForData(1);
@@ -91,7 +91,7 @@ static void sender(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::m
 		}
 	}
 
-	deb("Finished receiving queries");
+	deb("Finished sending results");
 }
 
 static void receiver_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer* gpu_buffer, std::mutex& mpi_lock) {
