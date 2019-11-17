@@ -3,6 +3,7 @@
 #include <vector>
 #include <queue>
 #include <mpi.h>
+#include <algorithm>
 
 #include "faiss/IndexIVFPQ.h"
 
@@ -121,6 +122,9 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 }
 
 void aggregator(int nshards, Config& cfg) {
+	bool started_problem_detection = false;
+	std::vector<bool> shard_works(nshards, true);
+	
 	auto target_delta = cfg.num_blocks * cfg.block_size / 10;
 	auto target = target_delta;
 	
@@ -191,6 +195,22 @@ void aggregator(int nshards, Config& cfg) {
 			}
 			
 			time += now() - before;
+		}
+		
+		if (! started_problem_detection && qn >= 1000) {
+			started_problem_detection = true;
+			
+			long min_queries_remaining = *std::min_element(remaining_queries_per_shard.begin(), remaining_queries_per_shard.end());
+			long max_queries_computed = cfg.num_blocks * cfg.block_size - min_queries_remaining;
+			long threshold_queries_remaining = cfg.num_blocks * cfg.block_size - long(2.0 / 3.0 * max_queries_computed); 
+			
+			for (int shard = 0; shard < nshards; shard++) {
+				shard_works[shard] = remaining_queries_per_shard[shard] <= threshold_queries_remaining;
+				
+				if (! shard_works[shard]) {
+					std::printf("Detected that shard %d is not working\n", shard);
+				}
+			}
 		}
 	}
 	
