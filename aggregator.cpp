@@ -124,6 +124,7 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 void aggregator(int nshards, Config& cfg) {
 	bool started_problem_detection = false;
 	std::vector<bool> shard_works(nshards, true);
+	long start_detection_at = 1000;
 	
 	auto target_delta = cfg.num_blocks * cfg.block_size / 10;
 	auto target = target_delta;
@@ -197,7 +198,7 @@ void aggregator(int nshards, Config& cfg) {
 			time += now() - before;
 		}
 		
-		if (! started_problem_detection && qn >= 1000) {
+		if (! started_problem_detection && qn >= start_detection_at) {
 			started_problem_detection = true;
 			
 			long min_queries_remaining = *std::min_element(remaining_queries_per_shard.begin(), remaining_queries_per_shard.end());
