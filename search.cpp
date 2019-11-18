@@ -214,7 +214,7 @@ static void main_driver(SyncBuffer* query_buffer, SyncBuffer* label_buffer, Sync
 	
 	policy->cleanup(cfg);
 	
-	std::printf("%d) Search node took %lf. Raw time: %lf. Queries: %ld\n", cfg.shard, now() - before, cfg.raw_search_time, nq);
+	deb("%d) Search node took %lf. Raw time: %lf. Queries: %ld", cfg.shard, now() - before, cfg.raw_search_time, nq);
 }
 
 void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long num_blocks, double gpu_throughput, double cpu_throughput) {

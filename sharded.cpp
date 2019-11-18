@@ -151,7 +151,7 @@ static void logSearchStart(int shard) {
 	gethostname(hostname, 1024);
 	int n;
 	cudaGetDeviceCount(&n);
-	std::printf("%d) Starting at %s. Visible gpus: %d\n", shard, hostname, n);
+	deb("%d) Starting at %s. Visible gpus: %d", shard, hostname, n);
 }
 
 int main(int argc, char* argv[]) {

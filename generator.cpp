@@ -199,7 +199,7 @@ static void single_block_size_generator(int nshards, double* query_start_time, C
 		queries_in_buffer = 0;
 	}
 
-	std::printf("Sending took %lf time\n", now() - before);
+	deb("Sending took %lf time", now() - before);
 	
 	double end_time[cfg.num_blocks * cfg.block_size];
 	MPI_Recv(end_time, cfg.num_blocks * cfg.block_size, MPI_DOUBLE, AGGREGATOR, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);

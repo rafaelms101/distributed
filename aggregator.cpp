@@ -194,7 +194,7 @@ void aggregator(int nshards, Config& cfg) {
 		}
 	}
 	
-	std::printf("aggregating took %lf\n", time);
+	deb("aggregating took %lf", time);
 	
 	if (cfg.exec_type != ExecType::Bench) {
 		show_recall(answers, cfg); 
