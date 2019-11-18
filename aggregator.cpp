@@ -122,7 +122,6 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 }
 
 void aggregator(int nshards, Config& cfg) {
-	bool started_problem_detection = false;
 	std::vector<bool> shard_works(nshards, true);
 	long start_detection_at = 1000;
 	
@@ -198,18 +197,19 @@ void aggregator(int nshards, Config& cfg) {
 			time += now() - before;
 		}
 		
-		if (! started_problem_detection && qn >= start_detection_at) {
-			started_problem_detection = true;
+		if (qn >= start_detection_at) {
+			start_detection_at *= 2;
 			
 			long min_queries_remaining = *std::min_element(remaining_queries_per_shard.begin(), remaining_queries_per_shard.end());
 			long max_queries_computed = cfg.num_blocks * cfg.block_size - min_queries_remaining;
 			long threshold_queries_remaining = cfg.num_blocks * cfg.block_size - long(2.0 / 3.0 * max_queries_computed); 
 			
 			for (int shard = 0; shard < nshards; shard++) {
-				shard_works[shard] = remaining_queries_per_shard[shard] <= threshold_queries_remaining;
+				auto worked = shard_works[shard];
+				shard_works[shard] = shard_works[shard] && remaining_queries_per_shard[shard] <= threshold_queries_remaining;
 				
-				if (! shard_works[shard]) {
-					std::printf("Detected that shard %d is not working\n", shard);
+				if (worked && ! shard_works[shard]) {
+					std::printf("Shard %d is not working\n", shard);
 				}
 			}
 		}
