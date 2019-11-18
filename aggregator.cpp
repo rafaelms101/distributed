@@ -122,8 +122,13 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 }
 
 void aggregator(int nshards, Config& cfg) {
-	std::vector<bool> shard_works(nshards, true);
-	long start_detection_at = 1000;
+	std::vector<bool> shard_works(nshards);
+	
+	for (int i = 0; i < nshards; i++) shard_works[i] = true;
+	
+	long target_offset = 10000;
+	std::vector<long> shard_target(nshards, cfg.block_size * cfg.num_blocks - target_offset);
+	long start_detection_at = 5000;
 	
 	auto target_delta = cfg.num_blocks * cfg.block_size / 10;
 	auto target = target_delta;
@@ -147,6 +152,8 @@ void aggregator(int nshards, Config& cfg) {
 		remaining_queries_per_shard[shard] = cfg.num_blocks * cfg.block_size;
 	}
 	
+	auto begin = now();
+	
 	while (queries_remaining >= 1) {
 		MPI_Status status;
 		MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
@@ -164,6 +171,11 @@ void aggregator(int nshards, Config& cfg) {
 
 		int shard = status.MPI_SOURCE - 2;
 		remaining_queries_per_shard[shard] -= qty;
+		
+		while (shard_target[shard] >= remaining_queries_per_shard[shard]) {
+			std::printf("%d) Reached target %d at %lf\n", shard, shard_target[shard], now() - begin); 
+			shard_target[shard] -= target_offset;
+		}
 		
 		for (int q = 0; q < qty; q++) {
 			queue[shard].push({ D + cfg.k * q, I + cfg.k * q, q == qty - 1, D, I });
@@ -198,14 +210,16 @@ void aggregator(int nshards, Config& cfg) {
 		}
 		
 		if (qn >= start_detection_at) {
-			start_detection_at *= 2;
-			
 			long min_queries_remaining = *std::min_element(remaining_queries_per_shard.begin(), remaining_queries_per_shard.end());
 			long max_queries_computed = cfg.num_blocks * cfg.block_size - min_queries_remaining;
 			long threshold_queries_remaining = cfg.num_blocks * cfg.block_size - long(2.0 / 3.0 * max_queries_computed); 
 			
+			std::printf("Detection step: %d. Threshold: %d\n", cfg.num_blocks * cfg.block_size - start_detection_at, threshold_queries_remaining);
+			
+			start_detection_at *= 2;
+			
 			for (int shard = 0; shard < nshards; shard++) {
-				auto worked = shard_works[shard];
+				bool worked = shard_works[shard];
 				shard_works[shard] = shard_works[shard] && remaining_queries_per_shard[shard] <= threshold_queries_remaining;
 				
 				if (worked && ! shard_works[shard]) {
