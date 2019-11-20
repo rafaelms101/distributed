@@ -22,11 +22,13 @@ SearchStrategy::SearchStrategy(int num_queues, float _base_start, float _base_en
 		all_label_buffers.push_back(new SyncBuffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes)); //100 MB 
 	}
 
-	load_bench_data(true, best_block_point_cpu);
-	load_bench_data(false, best_block_point_gpu);
+	cfg.nb /= cfg.total_pieces;
+	load_bench_data(true, best_block_point_cpu, best_block_point_cpu_time);
+	load_bench_data(false, best_block_point_gpu, best_block_point_gpu_time);
+	cfg.nb *= cfg.total_pieces;
 }
 
-void SearchStrategy::load_bench_data(bool cpu, long& best) {
+void SearchStrategy::load_bench_data(bool cpu, long& best, double& best_time) {
 	char file_path[100];
 	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d", PROF_ROOT, cpu ? "cpu" : "gpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
 	std::ifstream file;
@@ -53,6 +55,7 @@ void SearchStrategy::load_bench_data(bool cpu, long& best) {
 		if (tpb < btpb) {
 			btpb = tpb;
 			best = i;
+			best_time = times[i];
 		}
 	}
 

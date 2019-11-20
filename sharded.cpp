@@ -71,9 +71,11 @@ static void process_exec_policy(char** argv) {
 static void process_search_strategy(char** argv) {
 	if (!std::strcmp(argv[0], "c")) {
 		cfg.search_algorithm = SearchAlgorithm::Cpu;
+		cfg.total_pieces = 1;
 	} else if (!std::strcmp(argv[0], "g")) {
 		cfg.search_algorithm = SearchAlgorithm::Gpu;
 		cfg.gpu_pieces = atoi(argv[1]);
+		cfg.total_pieces = cfg.gpu_pieces;
 	} else if (!std::strcmp(argv[0], "h")) {
 		cfg.search_algorithm = SearchAlgorithm::Hybrid;
 		cfg.gpu_pieces = atoi(argv[1]);

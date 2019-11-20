@@ -24,9 +24,11 @@ protected:
 	faiss::gpu::StandardGpuResources* res;
 	
 	long best_block_point_cpu;
+	double best_block_point_cpu_time;
 	long best_block_point_gpu;
+	double best_block_point_gpu_time;
 	
-	void load_bench_data(bool cpu, long& best);
+	void load_bench_data(bool cpu, long& best, double& best_time);
 
 	void merge(long num_queries, std::vector<float*>& all_distances, std::vector<faiss::Index::idx_t*>& all_labels, float* distance_array, faiss::Index::idx_t* label_array);
 	void merge_procedure(long& buffer_start_id, long& sent, std::vector<SyncBuffer*>& all_distance_buffers, std::vector<SyncBuffer*>& all_label_buffers, SyncBuffer& distance_buffer, SyncBuffer& label_buffer);
