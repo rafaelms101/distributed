@@ -21,7 +21,7 @@ class SearchStrategy;
 struct Config {
 	//database config
 	const long d = 128; //vector dimension
-	const long nb = 500000000; //database size
+	long nb = 500000000; //database size
 	const long ncentroids = 4096; //number of centroids
 	const long m = 8; //vector size after compression, in bytes
 	const long nq = 10000; //total number of distinct queries
