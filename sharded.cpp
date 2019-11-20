@@ -36,6 +36,8 @@ static void process_query_distribution(char** argv) {
 }
 
 static void process_exec_policy(char** argv) {
+	cfg.total_pieces = 1;
+	
 	if (!std::strcmp(argv[0], "min")) {
 		cfg.exec_policy = new MinExecPolicy();
 	} else if (!std::strcmp(argv[0], "max")) {
