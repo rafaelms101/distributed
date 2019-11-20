@@ -392,7 +392,7 @@ void BestSearchStrategy::gpu_process() {
 			
 			if (largest_size >= cpu_blocks_1sec && rt_switch > rt_dont_switch) { 
 				//exchange it
-				deb("Switching %d[size=%d] with %d[size=%d]", on_gpu, gpu_size * cfg.block_size, largest_index, largest_size * cfg.block_size);
+				deb("Switching %d[size=%d] with %d[size=%d]", on_gpu, query_buffer[on_gpu]->num_entries() * cfg.block_size, largest_index, largest_size * cfg.block_size);
 				on_gpu = largest_index;
 				gpu_index->copyFrom(cpu_index[largest_index]);
 				deb("Switch finished");
