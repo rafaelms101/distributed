@@ -312,6 +312,8 @@ void search_out(int shard, SearchAlgorithm search_algorithm) {
 		strategy = new CpuOnlySearchStrategy(1, base_start, base_end);
 	} else if (search_algorithm == SearchAlgorithm::Hybrid) {
 		strategy = new HybridSearchStrategy(cfg.total_pieces, base_start, base_end, &res);
+	} else if (search_algorithm == SearchAlgorithm::Best) {
+		strategy = new BestSearchStrategy(cfg.total_pieces, base_start, base_end, &res);
 	} else if (search_algorithm == SearchAlgorithm::Gpu) {
 		strategy = new GpuOnlySearchStrategy(cfg.gpu_pieces, base_start, base_end, &res);
 	} else if (search_algorithm == SearchAlgorithm::Fixed) {

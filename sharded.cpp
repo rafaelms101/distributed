@@ -80,6 +80,10 @@ static void process_search_strategy(char** argv) {
 		cfg.search_algorithm = SearchAlgorithm::Hybrid;
 		cfg.gpu_pieces = atoi(argv[1]);
 		cfg.total_pieces = atoi(argv[2]);
+	}  else if (!std::strcmp(argv[0], "b")) {
+		cfg.search_algorithm = SearchAlgorithm::Best;
+		cfg.gpu_pieces = atoi(argv[1]);
+		cfg.total_pieces = atoi(argv[2]);
 	} else if (!std::strcmp(argv[0], "f")) {
 		cfg.search_algorithm = SearchAlgorithm::Fixed;
 		cfg.gpu_pieces = atoi(argv[1]);

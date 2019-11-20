@@ -63,6 +63,24 @@ public:
 	void start_search_process();
 };
 
+class BestSearchStrategy : public SearchStrategy {
+	double switch_time;
+	std::vector<faiss::IndexIVFPQ*> cpu_index;
+	faiss::gpu::GpuIndexIVFPQ* gpu_index;
+	long on_gpu;
+	std::atomic<long> remaining_blocks;
+	std::vector<std::mutex*> mutvec;
+
+	void gpu_process();
+	void cpu_process();
+
+public:
+	using SearchStrategy::SearchStrategy;
+
+	void setup();
+	void start_search_process();
+};
+
 class CpuOnlySearchStrategy : public SearchStrategy {
 	faiss::IndexIVFPQ* cpu_index;
 	

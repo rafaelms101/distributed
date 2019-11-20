@@ -362,3 +362,114 @@ void FixedSearchStrategy::process(faiss::Index* index, SyncBuffer* query_buffer,
 		distance_buffer->insert(nb, (byte*) D);
 	}
 }
+
+void BestSearchStrategy::gpu_process() {
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[best_block_point_gpu * cfg.block_size * cfg.k];
+	float* D = new float[best_block_point_gpu * cfg.block_size * cfg.k];
+
+	while (remaining_blocks >= 1) {
+		//REMEMBER, IT MIGHT BE THAT INSIDE HERE REMAINING_BLOCKS IS, IN FACT, 0
+		
+		auto nb = std::min(query_buffer[on_gpu]->num_entries(), best_block_point_gpu);
+		
+		if (nb == 0) {
+			// find the biggest queue
+			long largest_index = 0;
+			long largest_size = 0;
+			
+			for (int i = 0; i < query_buffer.size(); i++) {
+				long size = query_buffer[i]->num_entries();
+				if (size > largest_size) {
+					largest_size = size;
+					largest_index = i;
+				}
+			}
+			
+			// exchange it IF <complex logic>			
+			double rt_dont_switch = 0.5 * best_block_point_cpu_time / best_block_point_cpu * (largest_size / best_block_point_cpu_time + 1);
+			double rt_switch = switch_time + 0.5 * best_block_point_gpu_time / best_block_point_gpu * (largest_size / best_block_point_gpu_time + 1);
+			long cpu_blocks_1sec = long(1.0 / best_block_point_cpu_time);
+			
+			if (largest_size >= cpu_blocks_1sec && rt_switch > rt_dont_switch) { 
+				//exchange it
+				deb("Switching %d[size=%d] with %d[size=%d]", on_gpu, gpu_size * cfg.block_size, largest_index, largest_size * cfg.block_size);
+				on_gpu = largest_index;
+				gpu_index->copyFrom(cpu_index[largest_index]);
+				deb("Switch finished");
+			}
+		} else {
+			mutvec[on_gpu]->lock();
+			
+			deb("Processing %d queries on the GPU[%d]", nb * cfg.block_size, on_gpu);
+			gpu_index->search(nb * cfg.block_size, (float*) query_buffer[on_gpu]->front(), cfg.k, D, I);
+			
+			query_buffer[on_gpu]->remove(nb);
+			all_distance_buffers[on_gpu]->insert(nb, (byte*) D);
+			all_label_buffers[on_gpu]->insert(nb, (byte*) I);
+
+			remaining_blocks -= nb;
+
+			mutvec[on_gpu]->unlock();
+		}
+	}
+}
+
+void BestSearchStrategy::cpu_process() {
+	faiss::Index::idx_t* I = new faiss::Index::idx_t[best_block_point_cpu * cfg.block_size * cfg.k];
+	float* D = new float[best_block_point_cpu * cfg.block_size * cfg.k];
+	
+	while (remaining_blocks >= 1) {
+		//REMEMBER, IT MIGHT BE THAT INSIDE HERE REMAINING_BLOCKS IS, IN FACT, 0
+		
+		for (int i = 0; i < cpu_index.size(); i++) {
+			if (i == on_gpu) continue;
+			
+			auto nb = std::min(query_buffer[i]->num_entries(), best_block_point_cpu); //TODO: maybe reduce this to like 20
+			
+			if (nb == 0) continue;
+			
+			mutvec[i]->lock();
+			
+			deb("Processing %d queries on the CPU[%d]", nb * cfg.block_size, i);
+			cpu_index[i]->search(nb * cfg.block_size, (float*) query_buffer[i]->front(), cfg.k, D, I);
+
+			query_buffer[i]->remove(nb);
+			all_distance_buffers[i]->insert(nb, (byte*) D);
+			all_label_buffers[i]->insert(nb, (byte*) I);
+							
+			remaining_blocks -= nb;
+
+			mutvec[i]->unlock();
+		}
+	}
+}
+
+void BestSearchStrategy::start_search_process() {
+	std::thread merger_process { &BestSearchStrategy::merger, this };
+	std::thread cpu_thread { &BestSearchStrategy::cpu_process, this };
+	std::thread gpu_thread { &BestSearchStrategy::gpu_process, this };
+
+	merger_process.join();
+	cpu_thread.join();
+	gpu_thread.join();
+}
+
+void BestSearchStrategy::setup() {
+	deb("search_gpu called");
+
+	float step = (base_end - base_start) / cfg.total_pieces;
+
+	for (int i = 0; i < cfg.total_pieces; i++) {
+		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+		mutvec.push_back(new std::mutex());
+	}
+
+	gpu_index = dynamic_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % cfg.gpus_per_node, cpu_index[0], nullptr));
+	on_gpu = 0;
+	remaining_blocks = cfg.num_blocks * cpu_index.size();
+	
+	auto before = now();
+	gpu_index->copyFrom(cpu_index[0]);
+	switch_time = now() - before;
+	std::printf("switch time = %lf\n", switch_time);
+}

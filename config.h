@@ -13,7 +13,7 @@ constexpr long BENCH_REPEATS = 3; //number of times that a certain number of que
 
 enum class RequestDistribution {Constant, Variable_Poisson};
 enum class ExecType {Single, Both, OutOfCore, Bench};
-enum class SearchAlgorithm {Cpu, Gpu, Hybrid, CpuFixed, Fixed};
+enum class SearchAlgorithm {Cpu, Gpu, Hybrid, CpuFixed, Fixed, Best};
 
 class ExecPolicy;
 class SearchStrategy;
