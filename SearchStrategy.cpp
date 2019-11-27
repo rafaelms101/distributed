@@ -274,9 +274,11 @@ void GpuOnlySearchStrategy::setup() {
 
 //	float step = (base_end - base_start) / cfg.gpu_pieces;
 
+	auto index = load_index(0, 1, cfg);
+	
 	for (int i = 0; i < cfg.gpu_pieces; i++) {
 //		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
-		cpu_index.push_back(load_index(0, 1, cfg));
+		cpu_index.push_back(index);
 		remaining_blocks.push_back(cfg.num_blocks);
 	}
 
