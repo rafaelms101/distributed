@@ -309,15 +309,15 @@ void search_out(int shard, SearchAlgorithm search_algorithm) {
 	if (cfg.temp_memory_gpu > 0) res.setTempMemory(cfg.temp_memory_gpu);
 	
 	if (search_algorithm == SearchAlgorithm::Cpu) {
-		strategy = new CpuOnlySearchStrategy(1, base_start, base_end);
+		strategy = new CpuOnlySearchStrategy(1, base_start, base_end, true, false);
 	} else if (search_algorithm == SearchAlgorithm::Hybrid) {
-		strategy = new HybridSearchStrategy(cfg.total_pieces, base_start, base_end, &res);
+		strategy = new HybridSearchStrategy(cfg.total_pieces, base_start, base_end, true, true, &res);
 	} else if (search_algorithm == SearchAlgorithm::Best) {
-		strategy = new BestSearchStrategy(cfg.total_pieces, base_start, base_end, &res);
+		strategy = new BestSearchStrategy(cfg.total_pieces, base_start, base_end, true, true, &res);
 	} else if (search_algorithm == SearchAlgorithm::Gpu) {
-		strategy = new GpuOnlySearchStrategy(cfg.gpu_pieces, base_start, base_end, &res);
+		strategy = new GpuOnlySearchStrategy(cfg.gpu_pieces, base_start, base_end, false, true, &res);
 	} else if (search_algorithm == SearchAlgorithm::Fixed) {
-		strategy = new FixedSearchStrategy(2, base_start, base_end, &res);
+		strategy = new FixedSearchStrategy(2, base_start, base_end, true, true, &res);
 	}
 
 	strategy->setup();

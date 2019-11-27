@@ -35,7 +35,7 @@ protected:
 	void merger();
 	
 public:
-	SearchStrategy(int num_queues, float _base_start, float _base_end, faiss::gpu::StandardGpuResources* _res = nullptr);
+	SearchStrategy(int num_queues, float _base_start, float _base_end, bool usesCPU, bool usesGPU, faiss::gpu::StandardGpuResources* _res = nullptr);
 	
 	virtual ~SearchStrategy() {};
 	virtual void setup() = 0; //load bases and such

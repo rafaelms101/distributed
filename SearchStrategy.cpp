@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include "faiss/gpu/GpuCloner.h"
 
-SearchStrategy::SearchStrategy(int num_queues, float _base_start, float _base_end, faiss::gpu::StandardGpuResources* _res) :
+SearchStrategy::SearchStrategy(int num_queues, float _base_start, float _base_end, bool usesCPU, bool usesGPU, faiss::gpu::StandardGpuResources* _res) :
 		base_start(_base_start), base_end(_base_end), res(_res) {
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	const long distance_block_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
@@ -22,10 +22,10 @@ SearchStrategy::SearchStrategy(int num_queues, float _base_start, float _base_en
 		all_label_buffers.push_back(new SyncBuffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes)); //100 MB 
 	}
 
-	cfg.nb /= cfg.total_pieces;
-	load_bench_data(true, best_block_point_cpu, best_block_point_cpu_time);
-	load_bench_data(false, best_block_point_gpu, best_block_point_gpu_time);
-	cfg.nb *= cfg.total_pieces;
+//	cfg.nb /= cfg.total_pieces;
+	if (usesCPU) load_bench_data(true, best_block_point_cpu, best_block_point_cpu_time);
+	if (usesGPU) load_bench_data(false, best_block_point_gpu, best_block_point_gpu_time);
+//	cfg.nb *= cfg.total_pieces;
 }
 
 void SearchStrategy::load_bench_data(bool cpu, long& best, double& best_time) {
@@ -223,7 +223,10 @@ void HybridSearchStrategy::setup() {
 	float step = (base_end - base_start) / cfg.total_pieces;
 
 	for (int i = 0; i < cfg.total_pieces; i++) {
-		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+//		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+		cfg.nb /= cfg.total_pieces;
+		cpu_index.push_back(load_index(0, 1, cfg));
+		cfg.nb *= cfg.total_pieces;
 		mutvec.push_back(new std::mutex());
 	}
 
@@ -269,14 +272,26 @@ void CpuOnlySearchStrategy::start_search_process() {
 void GpuOnlySearchStrategy::setup() {
 	deb("search_gpu called");
 
-	float step = (base_end - base_start) / cfg.gpu_pieces;
+//	float step = (base_end - base_start) / cfg.gpu_pieces;
 
 	for (int i = 0; i < cfg.gpu_pieces; i++) {
-		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+//		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+		cpu_index.push_back(load_index(0, 1, cfg));
 		remaining_blocks.push_back(cfg.num_blocks);
 	}
-	
+
 	gpu_index = dynamic_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % cfg.gpus_per_node, cpu_index[0], nullptr));
+	
+//	deb("search_gpu called");
+//
+//	float step = (base_end - base_start) / cfg.gpu_pieces;
+//
+//	for (int i = 0; i < cfg.gpu_pieces; i++) {
+//		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+//		remaining_blocks.push_back(cfg.num_blocks);
+//	}
+//	
+//	gpu_index = dynamic_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % cfg.gpus_per_node, cpu_index[0], nullptr));
 }
 
 void GpuOnlySearchStrategy::start_search_process() {
@@ -299,7 +314,7 @@ void GpuOnlySearchStrategy::start_search_process() {
 				on_gpu = i;
 			}
 			
-			query_buffer[i]->waitForData(1);
+			query_buffer[i]->waitForData(remaining_blocks[i]);
 			auto num_blocks_to_be_processed = query_buffer[i]->num_entries();
 			
 			while (num_blocks_to_be_processed >= 1) {
@@ -367,10 +382,17 @@ void BestSearchStrategy::gpu_process() {
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[best_block_point_gpu * cfg.block_size * cfg.k];
 	float* D = new float[best_block_point_gpu * cfg.block_size * cfg.k];
 
+	long switch_threshold = 2 * (switch_time + (best_block_point_gpu_time - best_block_point_cpu_time) / 2) 
+			/ (best_block_point_cpu_time / best_block_point_cpu - best_block_point_gpu_time / best_block_point_gpu);
+	long gpu_thr = best_block_point_gpu / best_block_point_gpu_time;
+	long cpu_thr = best_block_point_cpu / best_block_point_cpu_time;
+	long simple_threshold = long(2 * switch_time * cpu_thr * gpu_thr / (gpu_thr - cpu_thr));
+	deb("switch threshold is %d. simple is %d", switch_threshold, simple_threshold);
+	
 	while (remaining_blocks >= 1) {
 		//REMEMBER, IT MIGHT BE THAT INSIDE HERE REMAINING_BLOCKS IS, IN FACT, 0
-		
 		auto nb = std::min(query_buffer[on_gpu]->num_entries(), best_block_point_gpu);
+
 		
 		if (nb == 0) {
 			// find the biggest queue
@@ -386,11 +408,7 @@ void BestSearchStrategy::gpu_process() {
 			}
 			
 			// exchange it IF <complex logic>			
-			double rt_dont_switch = 0.5 * best_block_point_cpu_time / best_block_point_cpu * (largest_size / best_block_point_cpu_time + 1);
-			double rt_switch = switch_time + 0.5 * best_block_point_gpu_time / best_block_point_gpu * (largest_size / best_block_point_gpu_time + 1);
-			long cpu_blocks_1sec = long(1.0 / best_block_point_cpu_time);
-			
-			if (largest_size >= cpu_blocks_1sec && rt_switch > rt_dont_switch) { 
+			if (largest_index != on_gpu && largest_size > switch_threshold) {
 				//exchange it
 				deb("Switching %d[size=%d] with %d[size=%d]", on_gpu, query_buffer[on_gpu]->num_entries() * cfg.block_size, largest_index, largest_size * cfg.block_size);
 				on_gpu = largest_index;
@@ -460,7 +478,10 @@ void BestSearchStrategy::setup() {
 	float step = (base_end - base_start) / cfg.total_pieces;
 
 	for (int i = 0; i < cfg.total_pieces; i++) {
-		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+//		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
+		cfg.nb /= cfg.total_pieces;
+		cpu_index.push_back(load_index(0, 1, cfg));
+		cfg.nb *= cfg.total_pieces;
 		mutvec.push_back(new std::mutex());
 	}
 
@@ -471,5 +492,5 @@ void BestSearchStrategy::setup() {
 	auto before = now();
 	gpu_index->copyFrom(cpu_index[0]);
 	switch_time = now() - before;
-	std::printf("switch time = %lf\n", switch_time);
+	deb("switch time = %lf", switch_time);
 }
