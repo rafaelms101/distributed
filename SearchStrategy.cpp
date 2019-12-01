@@ -300,19 +300,23 @@ void GpuOnlySearchStrategy::start_search_process() {
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[best_block_point_gpu * cfg.block_size * cfg.k];
 	float* D = new float[best_block_point_gpu * cfg.block_size * cfg.k];
 
-	bool processedSomething = true;
+	bool allFinished = false;
 	long on_gpu = 0;
 	
 	std::thread merger_process { &GpuOnlySearchStrategy::merger, this };
 	
-	while (processedSomething) {
-		processedSomething = false;
+	while (! allFinished) {
+		allFinished = true;
 		
 		for (int i = 0; i < cpu_index.size(); i++) {
 			if (remaining_blocks[i] == 0) continue;
 			
+			allFinished = false;
+			
 			if (on_gpu != i) {
+				auto before = now();
 				gpu_index->copyFrom(cpu_index[i]);
+				std::printf("%d) Switch: %lf\n", cfg.shard, now() - before);
 				on_gpu = i;
 			}
 			
@@ -330,8 +334,6 @@ void GpuOnlySearchStrategy::start_search_process() {
 				num_blocks_to_be_processed -= nb;
 				remaining_blocks[i] -= nb;
 			}
-			
-			processedSomething = true;
 		}
 	}
 	
@@ -384,11 +386,14 @@ void BestSearchStrategy::gpu_process() {
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[best_block_point_gpu * cfg.block_size * cfg.k];
 	float* D = new float[best_block_point_gpu * cfg.block_size * cfg.k];
 
-	long switch_threshold = 2 * (switch_time + (best_block_point_gpu_time - best_block_point_cpu_time) / 2) 
-			/ (best_block_point_cpu_time / best_block_point_cpu - best_block_point_gpu_time / best_block_point_gpu);
+	
 	long gpu_thr = best_block_point_gpu / best_block_point_gpu_time;
 	long cpu_thr = best_block_point_cpu / best_block_point_cpu_time;
 	long simple_threshold = long(2 * switch_time * cpu_thr * gpu_thr / (gpu_thr - cpu_thr));
+	
+	long switch_threshold = 2 * (switch_time + (best_block_point_gpu_time - best_block_point_cpu_time) / 2) 
+				/ (best_block_point_cpu_time / best_block_point_cpu - best_block_point_gpu_time / best_block_point_gpu);
+	
 	deb("switch threshold is %d. simple is %d", switch_threshold, simple_threshold);
 	
 	while (remaining_blocks >= 1) {
