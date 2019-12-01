@@ -320,18 +320,17 @@ void GpuOnlySearchStrategy::start_search_process() {
 				on_gpu = i;
 			}
 			
-			query_buffer[i]->waitForData(remaining_blocks[i]);
-			auto num_blocks_to_be_processed = query_buffer[i]->num_entries();
-			
-			while (num_blocks_to_be_processed >= 1) {
-				long nb = std::min(num_blocks_to_be_processed, best_block_point_gpu);
+			while (remaining_blocks[i] >= 1) {
+				query_buffer[i]->waitForData(1);
+				
+				long nb = std::min(query_buffer[i]->num_entries(), best_block_point_gpu);
 				gpu_index->search(nb * cfg.block_size, (float*) query_buffer[i]->front(), cfg.k, D, I);
 				
 				query_buffer[i]->remove(nb);
 				all_distance_buffers[i]->insert(nb, (byte*) D);
 				all_label_buffers[i]->insert(nb, (byte*) I);
 				
-				num_blocks_to_be_processed -= nb;
+//				num_blocks_to_be_processed -= nb;
 				remaining_blocks[i] -= nb;
 			}
 		}
