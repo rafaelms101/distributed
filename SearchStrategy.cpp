@@ -314,9 +314,7 @@ void GpuOnlySearchStrategy::start_search_process() {
 			allFinished = false;
 			
 			if (on_gpu != i) {
-				auto before = now();
 				gpu_index->copyFrom(cpu_index[i]);
-				std::printf("%d) Switch: %lf\n", cfg.shard, now() - before);
 				on_gpu = i;
 			}
 			
