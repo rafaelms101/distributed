@@ -263,8 +263,8 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	const long label_block_size_in_bytes = sizeof(faiss::Index::idx_t) * cfg.k * cfg.block_size;
 
 	SyncBuffer query_buffer(block_size_in_bytes, 500 * 1024 * 1024 / block_size_in_bytes); //500MB
-	SyncBuffer distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
-	SyncBuffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
+	SyncBuffer distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 * 10 / distance_block_size_in_bytes); //100 MB
+	SyncBuffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 * 10 / label_block_size_in_bytes); //100 MB
 
 	faiss::Index* cpu_index = load_index(0, 1, cfg);
 	faiss::Index* gpu_index = nullptr;

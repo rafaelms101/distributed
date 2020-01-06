@@ -18,10 +18,12 @@ enum class SearchAlgorithm {Cpu, Gpu, Hybrid, CpuFixed, Fixed, Best};
 class ExecPolicy;
 class SearchStrategy;
 
+//TODO: make this a json file
 struct Config {
 	//database config
-	const long d = 128; //vector dimension
-	long nb = 500000000; //database size
+	const long d = 384; //vector dimension
+//	long nb = 500000000; //database size
+	long nb = 79292017;
 	const long ncentroids = 4096; //number of centroids
 	const long m = 8; //vector size after compression, in bytes
 	const long nq = 10000; //total number of distinct queries

@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) {
     } else if (world_rank == 0) {
     	aggregator(nshards, cfg);
     } else {
-    	logSearchStart(shard);
+//    	logSearchStart(shard);
     	cfg.shard = shard;
     	
     	if (cfg.exec_type == ExecType::Bench) {
