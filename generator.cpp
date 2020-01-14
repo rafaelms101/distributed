@@ -230,23 +230,10 @@ void generator(int nshards, Config& cfg) {
 		double query_interval = 0;
 
 		if (cfg.query_load > 0) {
-			cfg.nb /= cfg.total_pieces;
-			auto times = BenchExecPolicy::load_prof_times(true, cfg);
-			cfg.nb *= cfg.total_pieces;
-			
-			double best = times[1];
-			for (int i = 1; i < times.size(); i++) {
-				times[i] = times[i] / (i * cfg.block_size);
-				deb("%d: %lf", i * cfg.block_size, times[i]);
-				if (times[i] < best) best = times[i];
-			}
-
-			deb("best interval: %lf", best);
-			query_interval = best / cfg.query_load;
+			query_interval = 1.0 / cfg.query_load;
 		}
 
 		deb("interval: %lf", query_interval);
-		
 		
 		switch (cfg.request_distribution) {
 			case RequestDistribution::Constant: {
