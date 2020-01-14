@@ -23,11 +23,52 @@
 #include "ExecPolicy.h"
 #include "SearchStrategy.h"
 
-static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_lock) {
-	double time = 0;
-	
-	deb("Receiver");
+static void comm_handler(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::vector<SyncBuffer*>& query_buffer) {
+	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
+	long blocks_sent = 0;
+	long blocks_received = 0;
 
+	float dummy;
+	MPI_Ssend(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
+
+	while (blocks_sent < cfg.num_blocks || blocks_received < cfg.num_blocks) {
+		if (blocks_sent < cfg.num_blocks && distance_buffer->num_entries() >= 1 && label_buffer->num_entries() >= 1) {
+			auto ready = std::min(distance_buffer->num_entries(), label_buffer->num_entries());
+
+			if (ready >= 1) {
+				double before = now();
+
+				blocks_sent += ready;
+
+				void* label_ptr = label_buffer->front();
+				void* dist_ptr = distance_buffer->front();
+
+				//TODO: Optimize this to an Immediate Synchronous Send
+				MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG,
+						AGGREGATOR, 0, MPI_COMM_WORLD);
+				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT,
+						AGGREGATOR, 1, MPI_COMM_WORLD);
+
+				label_buffer->remove(ready);
+				distance_buffer->remove(ready);
+			}
+		}
+
+		if (blocks_received < cfg.num_blocks) {
+			MPI_Bcast(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, 0, cfg.search_comm);
+
+			for (auto buffer : query_buffer) {
+				buffer->insert(1, tmp_buffer);
+			}
+
+			blocks_received++;
+		}
+	}
+
+	deb("Finished sending results");
+}
+
+static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_lock) {
 	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
 
 	long blocks_received = 0;
@@ -36,10 +77,6 @@ static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_loc
 	MPI_Ssend(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 
 	deb("Now waiting for queries");
-
-	MPI_Status status;
-	
-	double before = now();
 	
 	while (blocks_received < cfg.num_blocks) {
 		mpi_lock.lock();
@@ -286,15 +323,11 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	std::vector<SyncBuffer*> buffers;
 	buffers.push_back(&query_buffer);
 	
-	std::mutex mpi_lock;
-	
-	std::thread recv { receiver, std::ref(buffers), std::ref(mpi_lock) };
-	std::thread send { sender, &distance_buffer, &label_buffer, std::ref(mpi_lock) };
+	std::thread comm_thread { comm_handler, &distance_buffer, &label_buffer, std::ref(buffers) };
 	
 	main_driver(&query_buffer, &label_buffer, &distance_buffer, policy, num_blocks, cpu_index, gpu_index);
 
-	recv.join();
-	send.join();
+	comm_thread.join();
 }
 
 void search_out(int shard, SearchAlgorithm search_algorithm) {
