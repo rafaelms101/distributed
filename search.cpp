@@ -68,6 +68,66 @@ static void comm_handler(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, 
 	deb("Finished sending results");
 }
 
+static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_distance_buffer, SyncBuffer* cpu_label_buffer, SyncBuffer* gpu_distance_buffer, SyncBuffer* gpu_label_buffer, SyncBuffer* cpu_buffer, SyncBuffer* gpu_buffer) {
+	long blocks_received = 0;
+	int blocks_until_cpu = blocks_gpu;
+	long blocks_sent = 0;
+	
+	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
+
+	float dummy;
+	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
+
+	while (blocks_received < cfg.num_blocks || blocks_sent < cfg.num_blocks) {
+		if (blocks_sent < cfg.num_blocks) {
+			auto readyGPU = std::min(gpu_distance_buffer->num_entries(), gpu_label_buffer->num_entries());
+
+			if (readyGPU >= 1) {
+				blocks_sent += readyGPU;
+
+				void* label_ptr = gpu_label_buffer->front();
+				void* dist_ptr = gpu_distance_buffer->front();
+
+				//TODO: Optimize this to an Immediate Synchronous Send
+				MPI_Ssend(label_ptr, cfg.k * cfg.block_size * readyGPU, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * readyGPU, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+
+				gpu_label_buffer->remove(readyGPU);
+				gpu_distance_buffer->remove(readyGPU);
+			}
+
+			auto readyCPU = std::min(cpu_distance_buffer->num_entries(), cpu_label_buffer->num_entries());
+
+			if (readyCPU >= 1) {
+				blocks_sent += readyCPU;
+
+				void* label_ptr = cpu_label_buffer->front();
+				void* dist_ptr = cpu_distance_buffer->front();
+
+				MPI_Ssend(label_ptr, cfg.k * cfg.block_size * readyCPU, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * readyCPU, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+
+				cpu_label_buffer->remove(readyCPU);
+				cpu_distance_buffer->remove(readyCPU);
+			}
+		}
+		
+		if (blocks_received < cfg.num_blocks) {
+			MPI_Bcast(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, 0, cfg.search_comm);
+
+			if (blocks_until_cpu >= 1) {
+				gpu_buffer->insert(1, tmp_buffer);
+				blocks_until_cpu--;
+			} else {
+				cpu_buffer->insert(1, tmp_buffer);
+				blocks_until_cpu = blocks_gpu;
+			}
+
+			blocks_received += 1;	
+		}
+	}
+}
+
 static void receiver_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer* gpu_buffer, std::mutex& mpi_lock) {
 	deb("Receiver");
 	
@@ -216,16 +276,12 @@ void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long
 	
 	cpu_policy->setup();
 	gpu_policy->setup();
-	
-	std::mutex mpi_lock;
-	std::thread recv { receiver_both, gpu_blocks_per_cpu_block, &cpu_query_buffer, &gpu_query_buffer, std::ref(mpi_lock) };	
-	std::thread send { sender_both, &cpu_distance_buffer, &cpu_label_buffer, &gpu_distance_buffer, &gpu_label_buffer, std::ref(mpi_lock) };
 
+	std::thread comm_thread { comm_handler_both, gpu_blocks_per_cpu_block, &cpu_distance_buffer, &cpu_label_buffer, &gpu_distance_buffer, &gpu_label_buffer, &cpu_query_buffer, &gpu_query_buffer };
 	std::thread gpu_thread { main_driver, &gpu_query_buffer, &gpu_label_buffer, &gpu_distance_buffer, gpu_policy, blocks_gpu, cpu_index, gpu_index };
 	std::thread cpu_thread { main_driver, &cpu_query_buffer, &cpu_label_buffer, &cpu_distance_buffer, cpu_policy, blocks_cpu, cpu_index, gpu_index };
-	
-	recv.join();
-	send.join();
+
+	comm_thread.join();
 	gpu_thread.join();
 	cpu_thread.join();
 }
