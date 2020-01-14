@@ -22,10 +22,8 @@ SearchStrategy::SearchStrategy(int num_queues, float _base_start, float _base_en
 		all_label_buffers.push_back(new SyncBuffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes)); //100 MB 
 	}
 
-//	cfg.nb /= cfg.total_pieces;
 	if (usesCPU) load_bench_data(true, best_block_point_cpu, best_block_point_cpu_time);
 	if (usesGPU) load_bench_data(false, best_block_point_gpu, best_block_point_gpu_time);
-//	cfg.nb *= cfg.total_pieces;
 }
 
 void SearchStrategy::load_bench_data(bool cpu, long& best, double& best_time) {
@@ -223,10 +221,7 @@ void HybridSearchStrategy::setup() {
 	float step = (base_end - base_start) / cfg.total_pieces;
 
 	for (int i = 0; i < cfg.total_pieces; i++) {
-//		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
-		cfg.nb /= cfg.total_pieces;
-		cpu_index.push_back(load_index(0, 1, cfg));
-		cfg.nb *= cfg.total_pieces;
+		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
 		mutvec.push_back(new std::mutex());
 	}
 
@@ -272,28 +267,14 @@ void CpuOnlySearchStrategy::start_search_process() {
 void GpuOnlySearchStrategy::setup() {
 	deb("search_gpu called");
 
-//	float step = (base_end - base_start) / cfg.gpu_pieces;
-
-	auto index = load_index(0, 1, cfg);
+	float step = (base_end - base_start) / cfg.gpu_pieces;
 	
 	for (int i = 0; i < cfg.gpu_pieces; i++) {
-//		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
-		cpu_index.push_back(index);
+		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
 		remaining_blocks.push_back(cfg.num_blocks);
 	}
 
 	gpu_index = dynamic_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % cfg.gpus_per_node, cpu_index[0], nullptr));
-	
-//	deb("search_gpu called");
-//
-//	float step = (base_end - base_start) / cfg.gpu_pieces;
-//
-//	for (int i = 0; i < cfg.gpu_pieces; i++) {
-//		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
-//		remaining_blocks.push_back(cfg.num_blocks);
-//	}
-//	
-//	gpu_index = dynamic_cast<faiss::gpu::GpuIndexIVFPQ*>(faiss::gpu::index_cpu_to_gpu(res, cfg.shard % cfg.gpus_per_node, cpu_index[0], nullptr));
 }
 
 void GpuOnlySearchStrategy::start_search_process() {
@@ -318,17 +299,18 @@ void GpuOnlySearchStrategy::start_search_process() {
 				on_gpu = i;
 			}
 			
-			while (remaining_blocks[i] >= 1) {
-				query_buffer[i]->waitForData(1);
-				
-				long nb = std::min(query_buffer[i]->num_entries(), best_block_point_gpu);
+			query_buffer[i]->waitForData(1);
+			long num_blocks_to_be_processed = query_buffer[i]->num_entries();
+
+			while (num_blocks_to_be_processed >= 1) {
+				long nb = std::min(num_blocks_to_be_processed, best_block_point_gpu);
 				gpu_index->search(nb * cfg.block_size, (float*) query_buffer[i]->front(), cfg.k, D, I);
 				
 				query_buffer[i]->remove(nb);
 				all_distance_buffers[i]->insert(nb, (byte*) D);
 				all_label_buffers[i]->insert(nb, (byte*) I);
 				
-//				num_blocks_to_be_processed -= nb;
+				num_blocks_to_be_processed -= nb;
 				remaining_blocks[i] -= nb;
 			}
 		}
@@ -482,10 +464,7 @@ void BestSearchStrategy::setup() {
 	float step = (base_end - base_start) / cfg.total_pieces;
 
 	for (int i = 0; i < cfg.total_pieces; i++) {
-//		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
-		cfg.nb /= cfg.total_pieces;
-		cpu_index.push_back(load_index(0, 1, cfg));
-		cfg.nb *= cfg.total_pieces;
+		cpu_index.push_back(load_index(base_start + i * step, base_start + (i + 1) * step, cfg));
 		mutvec.push_back(new std::mutex());
 	}
 

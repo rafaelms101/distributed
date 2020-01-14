@@ -266,7 +266,7 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	SyncBuffer distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
 	SyncBuffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
 
-	faiss::Index* cpu_index = load_index(0, 1, cfg);
+	faiss::Index* cpu_index = load_index(0, 1.0 / cfg.total_pieces, cfg);
 	faiss::Index* gpu_index = nullptr;
 		
 

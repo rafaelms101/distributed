@@ -143,6 +143,9 @@ void aggregator(int nshards, Config& cfg) {
 		remaining_queries_per_shard[shard] = cfg.num_blocks * cfg.block_size;
 	}
 	
+	auto I = new faiss::Index::idx_t[cfg.k * 100000];
+	auto D = new float[cfg.k * 100000];
+
 	while (queries_remaining >= 1) {
 		MPI_Status status;
 		MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
@@ -152,8 +155,7 @@ void aggregator(int nshards, Config& cfg) {
 
 		int qty = message_size / cfg.k;
 		
-		auto I = new faiss::Index::idx_t[cfg.k * qty];
-		auto D = new float[cfg.k * qty];
+
 
 		MPI_Recv(I, cfg.k * qty, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		MPI_Recv(D, cfg.k * qty, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
