@@ -6,7 +6,7 @@
 
 long CPUGreedyPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 	long num_blocks = buffer.num_entries();
-	return std::min(num_blocks, 200L);
+	return std::min(num_blocks, 20000L);
 }
 
 //TODO: add this to the HybridPolicy class
