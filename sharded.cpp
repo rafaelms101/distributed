@@ -97,7 +97,7 @@ static void process_search_strategy(char** argv) {
 }
 
 static void handle_parameters(int argc, char* argv[], int shard) {
-	std::string usage = "./sharded b <cpu|gpu|both> <parts> | sharded <c|p> <query_interval> <s|o> <alg params> | sharded <c|p> <query_interval> b <gpu_throughput> <cpu_throughput> <alg params>";
+	std::string usage = "./sharded b <cpu|gpu|both> <parts> | sharded <c|p> <queries / second> <s|o> <alg params> | sharded <c|p> <queries / second> b <gpu_throughput> <cpu_throughput> <alg params>";
 
 	if (argc < 2) {
 		std::printf("Wrong arguments.\n%s\n", usage.c_str());
