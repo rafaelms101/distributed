@@ -85,7 +85,6 @@ static void receiver_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer* gp
 		mpi_lock.lock();
 		MPI_Bcast(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, 0, cfg.search_comm);
 		mpi_lock.unlock();
-		assert(status.MPI_ERROR == MPI_SUCCESS);
 		
 		if (blocks_until_cpu >= 1) {
 			gpu_buffer->insert(1, tmp_buffer);
@@ -294,11 +293,9 @@ void search_out(int shard, SearchAlgorithm search_algorithm) {
 
 	std::mutex mpi_lock;
 	
-	std::thread recv { receiver, std::ref(strategy->queryBuffers()), std::ref(mpi_lock) };
-	std::thread send { sender, strategy->distanceBuffer(), strategy->labelBuffer(), std::ref(mpi_lock) };
+	std::thread comm_thread { comm_handler, strategy->distanceBuffer(), strategy->labelBuffer(), std::ref(strategy->queryBuffers()) };
 
 	strategy->start_search_process();
 
-	recv.join();
-	send.join();
+	comm_thread.join();
 }
