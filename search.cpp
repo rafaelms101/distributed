@@ -80,8 +80,8 @@ static void sender(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::m
 
 			//TODO: Optimize this to an Immediate Synchronous Send
 			mpi_lock.lock();
-			MPI_Send(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-			MPI_Send(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
 			mpi_lock.unlock();
 			
 			label_buffer->remove(ready);
