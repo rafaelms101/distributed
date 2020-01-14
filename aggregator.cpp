@@ -164,7 +164,7 @@ void aggregator(int nshards, Config& cfg) {
 	for (int shard = 0; shard < nshards; shard++) {
 		remaining_queries_per_shard[shard] = cfg.num_blocks * cfg.block_size;
 	}
-	
+
 	while (queries_remaining >= 1) {
 		MPI_Status status;
 		MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
