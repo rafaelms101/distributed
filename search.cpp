@@ -68,69 +68,6 @@ static void comm_handler(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, 
 	deb("Finished sending results");
 }
 
-static void receiver(std::vector<SyncBuffer*>& query_buffer, std::mutex& mpi_lock) {
-	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
-
-	long blocks_received = 0;
-
-	float dummy;
-	MPI_Ssend(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
-
-	deb("Now waiting for queries");
-	
-	while (blocks_received < cfg.num_blocks) {
-		mpi_lock.lock();
-		MPI_Bcast(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, 0, cfg.search_comm);
-		mpi_lock.unlock();
-		assert(status.MPI_ERROR == MPI_SUCCESS);
-
-		for (auto buffer : query_buffer) {
-			buffer->insert(1, tmp_buffer);
-		}
-
-		blocks_received++;
-	}
-	
-	deb("Finished receiving queries");	
-}
-
-static void sender(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::mutex& mpi_lock) {
-	double time = 0;
-	deb("Sender");
-
-	long blocks_sent = 0;
-
-	deb("Now waiting for results");
-
-	while (blocks_sent < cfg.num_blocks) {
-		distance_buffer->waitForData(1);
-		label_buffer->waitForData(1);
-		auto ready = std::min(distance_buffer->num_entries(), label_buffer->num_entries());
-
-		if (ready >= 1) {
-			double before = now();
-			
-			blocks_sent += ready;
-
-			void* label_ptr = label_buffer->front();
-			void* dist_ptr = distance_buffer->front();
-
-			//TODO: Optimize this to an Immediate Synchronous Send
-			mpi_lock.lock();
-			MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
-			mpi_lock.unlock();
-			
-			label_buffer->remove(ready);
-			distance_buffer->remove(ready);
-			
-			time += now() - before;
-		}
-	}
-
-	deb("Finished sending results");
-}
-
 static void receiver_both(int blocks_gpu, SyncBuffer* cpu_buffer, SyncBuffer* gpu_buffer, std::mutex& mpi_lock) {
 	deb("Receiver");
 	
