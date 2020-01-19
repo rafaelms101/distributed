@@ -114,14 +114,14 @@ faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cf
 		std::printf("%s doesnt exist\n", index_path);
 	}
 	
-	std::printf("%d) Loading file: %s\n", cfg.shard, index_path);
+//	std::printf("%d) Loading file: %s\n", cfg.shard, index_path);
 	
 	auto before = now();
 	
 	FILE* index_file = fopen(index_path, "r");
 	auto cpu_index = dynamic_cast<faiss::IndexIVFPQ*>(read_index(index_file, start_percent, end_percent));
 
-	std::printf("%d) Load finished. Took %lf\n", cfg.shard, now() - before);
+//	std::printf("%d) Load finished. Took %lf\n", cfg.shard, now() - before);
 
 	//TODO: Maybe we shouldnt set nprobe here
 	dynamic_cast<faiss::IndexIVFPQ*>(cpu_index)->nprobe = cfg.nprobe;
