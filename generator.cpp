@@ -45,18 +45,25 @@ static float* to_float_array(unsigned char* vector, int ne, int d) {
 
 static float* load_queries(int d, int nq) {
 	char query_path[500];
-	sprintf(query_path, "%s/bigann_query.bvecs", SRC_PATH);
+	sprintf(query_path, "%s/queries", SRC_PATH);
 
 	int world_size;
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
 	//loading queries
 	size_t fz;
-	unsigned char* queries = bvecs_read(query_path, &fz);
-	float* xq = to_float_array(queries, nq, d);
-	munmap(queries, fz);
-	
+//	unsigned char* queries = bvecs_read(query_path, &fz);
+//	float* xq = to_float_array(queries, nq, d);
+//	munmap(queries, fz);
+
+	int dout;
+	int nout;
+	float* xq = fvecs_read(query_path, &dout, &nout);
+
 	return xq;
+	
+//	float* xq = new float[10000 * 384];
+//	return xq;
 }
 
 static void send_queries(int nshards, float* query_buffer, int d) {
@@ -145,12 +152,12 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 		block_total += response_time;
 		nq_block++;
 		
-		if (cfg.request_distribution == RequestDistribution::Variable_Poisson
-				&& nq_block == block_size) {
-			std::printf("%lf\n", block_total / nq_block);
-			block_total = 0;
-			nq_block = 0;
-		}
+//		if (cfg.request_distribution == RequestDistribution::Variable_Poisson
+//				&& nq_block == block_size) {
+//			std::printf("%lf\n", block_total / nq_block);
+//			block_total = 0;
+//			nq_block = 0;
+//		}
 	}
 	
 	std::printf("%lf\n", total / (cfg.num_blocks * cfg.block_size));

@@ -58,6 +58,28 @@ static void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss
 	}
 }
 
+static faiss::Index::idx_t* load_gt_tinydb(Config& cfg) {
+	//	 load ground-truth and convert int to long
+	char idx_path[1000];
+	char gt_path[500];
+	sprintf(gt_path, "%s/gnd", SRC_PATH);
+	sprintf(idx_path, "%s/gt", gt_path);
+
+	int n_out;
+	int db_k;
+	int *gt_int = ivecs_read(idx_path, &db_k, &n_out);
+
+	faiss::Index::idx_t* gt = new faiss::Index::idx_t[cfg.k * cfg.nq];
+
+	for (int i = 0; i < cfg.nq; i++) {
+		for (int j = 0; j < cfg.k; j++) {
+			gt[i * cfg.k + j] = gt_int[i * db_k + j];
+		}
+	}
+
+	delete[] gt_int;
+	return gt;
+}
 
 static faiss::Index::idx_t* load_gt(Config& cfg) {
 	//	 load ground-truth and convert int to long
@@ -95,7 +117,7 @@ static void send_times(std::deque<double>& end_times, int eval_length) {
 
 //TODO: make this work for generic k's
 static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
-	auto gt = load_gt(cfg);
+	auto gt = load_gt_tinydb(cfg);
 
 	int n_1 = 0, n_10 = 0, n_100 = 0;
 	
@@ -155,6 +177,7 @@ void aggregator(int nshards, Config& cfg) {
 		auto I = new faiss::Index::idx_t[cfg.k * qty];
 		auto D = new float[cfg.k * qty];
 
+
 		MPI_Recv(I, cfg.k * qty, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		MPI_Recv(D, cfg.k * qty, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
@@ -197,7 +220,7 @@ void aggregator(int nshards, Config& cfg) {
 	deb("aggregating took %lf", time);
 	
 	if (cfg.exec_type != ExecType::Bench) {
-		show_recall(answers, cfg); 
+//		show_recall(answers, cfg);
 		send_times(end_times, cfg.num_blocks * cfg.block_size);
 	}
 	
