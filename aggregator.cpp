@@ -186,7 +186,7 @@ void aggregator(int nshards, Config& cfg) {
 			end_times.push_back(now());
 			
 			if (qn >= target) {
-				std::printf("%d queries remaining\n", queries_remaining);
+//				std::printf("%d queries remaining\n", queries_remaining);
 				target += target_delta;
 			}
 			
