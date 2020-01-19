@@ -282,15 +282,19 @@ void DynamicExecPolicy::setup() {
 	std::vector<double> times(BenchExecPolicy::load_prof_times(true, cfg));
 	std::vector<double> time_per_block(times.size());
 
+	long best_idx = 1;
+	double best_time_per_block = times[1];
+	
 	for (long i = 1; i < times.size(); i++) {
 		time_per_block[i] = times[i] / i;
+		
+		if (time_per_block[i] < best_time_per_block) {
+			best_time_per_block = time_per_block[i];
+			best_idx = i;
+		}
 	}
 
-	double tolerance = 0.1;
-
-	std::pair<long, long> limits = longest_contiguous_region(tolerance, time_per_block);
-	pdGPU.min_block = limits.first;
-	pdGPU.max_block = limits.second;
+	pdGPU.min_block = best_idx;
 
 	pdGPU.times = new double[pdGPU.min_block + 1];
 	pdGPU.times[0] = 0;
