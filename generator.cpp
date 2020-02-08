@@ -144,13 +144,6 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 		total += response_time;
 		block_total += response_time;
 		nq_block++;
-		
-		if (cfg.request_distribution == RequestDistribution::Variable_Poisson
-				&& nq_block == block_size) {
-			std::printf("%lf\n", block_total / nq_block);
-			block_total = 0;
-			nq_block = 0;
-		}
 	}
 	
 	std::printf("%lf\n", total / (cfg.num_blocks * cfg.block_size));
