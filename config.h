@@ -21,7 +21,7 @@ struct Config {
 	const std::string queries_path = "/home/rafael/Downloads/bigann_query.bvecs";
 	long distinct_queries = 10000;
 	const std::string gnd_path = "/home/rafael/Downloads/bigann_gnd/gnd/idx_500M.ivecs";
-	const long dataset_size_reduction = 1; //TODO: implement this
+	long dataset_size_reduction = 1;
 	
 	
 	//runtime config

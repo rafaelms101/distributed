@@ -36,8 +36,6 @@ static void process_query_distribution(char** argv) {
 }
 
 static void process_exec_policy(char** argv) {
-	cfg.total_pieces = 1;
-	
 	if (!std::strcmp(argv[0], "min")) {
 		cfg.exec_policy = new MinExecPolicy();
 	} else if (!std::strcmp(argv[0], "max")) {
@@ -129,7 +127,7 @@ static void handle_parameters(int argc, char* argv[], int shard) {
 			std::exit(-1);
 		}
 
-		cfg.total_pieces = atoi(argv[3]);
+		cfg.dataset_size_reduction *= atoi(argv[3]);
 	} else {
 		if (argc < 5) {
 			std::printf("Wrong arguments.\n%s\n", usage.c_str());

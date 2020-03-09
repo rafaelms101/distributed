@@ -264,7 +264,7 @@ void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long
 	SyncBuffer gpu_label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
 
 	
-	faiss::Index* cpu_index = load_index(0, 1, cfg);
+	faiss::Index* cpu_index = load_index(0, 1.0 / cfg.dataset_size_reduction, cfg);
 	
 	faiss::gpu::StandardGpuResources res;
 	if (cfg.temp_memory_gpu > 0) res.setTempMemory(cfg.temp_memory_gpu);
@@ -295,7 +295,7 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	SyncBuffer distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
 	SyncBuffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
 
-	faiss::Index* cpu_index = load_index(0, 1.0 / cfg.total_pieces, cfg);
+	faiss::Index* cpu_index = load_index(0, 1.0 / cfg.dataset_size_reduction, cfg);
 	faiss::Index* gpu_index = nullptr;
 		
 
@@ -328,7 +328,7 @@ void search_out(int shard, SearchAlgorithm search_algorithm) {
 	SearchStrategy* strategy;
 
 	float base_start = 0;
-	float base_end = 1;
+	float base_end = 1.0 / cfg.dataset_size_reduction;
 
 	faiss::gpu::StandardGpuResources res;
 	if (cfg.temp_memory_gpu > 0) res.setTempMemory(cfg.temp_memory_gpu);
