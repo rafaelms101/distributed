@@ -14,12 +14,33 @@ static float* load_queries() {
 	//loading queries
 	int d; 
 	long nqueries;
+	
+	auto extension = cfg.queries_path.substr(cfg.queries_path.length() - 5);
 
-	unsigned char* queries = bvecs_read(cfg.queries_path.c_str(), &d, &nqueries);
+	float* xq;
+	
+	if (extension == "bvecs") {
+		unsigned char* queries = bvecs_read(cfg.queries_path.c_str(), &d, &nqueries);
+		xq = to_float_array(queries, cfg.distinct_queries, cfg.d);
+		size_t fz = (4 + cfg.d) * cfg.distinct_queries;
+		munmap(queries, fz);
+	} else if (extension == "fvecs") {
+		xq = fvecs_read(cfg.queries_path.c_str(), &d, &nqueries);
+	} else if (extension == "ivecs") {
+		int* queries = ivecs_read(cfg.queries_path.c_str(), &d, &nqueries);
+		xq = (float*) queries;
+		
+		for (int i = 0; i < d * nqueries; i++) {
+			xq[i] = (float) queries[i];
+		}
+		
+	} else {
+		std::printf("Wrong extension on queries file: %s\n", cfg.queries_path.c_str());
+		std::exit(-1);
+	}
+	
 	assert(nqueries == cfg.distinct_queries);
-	float* xq = to_float_array(queries, cfg.distinct_queries, cfg.d);
-	size_t fz = (4 + cfg.d) * cfg.distinct_queries;
-	munmap(queries, fz);
+	assert(d == cfg.d);
 	
 	return xq;
 }
