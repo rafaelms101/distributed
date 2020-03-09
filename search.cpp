@@ -255,13 +255,13 @@ void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long
 	const long distance_block_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
 	const long label_block_size_in_bytes = sizeof(faiss::Index::idx_t) * cfg.k * cfg.block_size;
 
-	SyncBuffer cpu_query_buffer(block_size_in_bytes, 500 * 1024 * 1024 / block_size_in_bytes); //500MB
-	SyncBuffer cpu_distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
-	SyncBuffer cpu_label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
+	SyncBuffer cpu_query_buffer(block_size_in_bytes, 1000 * 1024 * 1024 / block_size_in_bytes); 
+	SyncBuffer cpu_distance_buffer(distance_block_size_in_bytes, 1000 * 1024 * 1024 / distance_block_size_in_bytes); 
+	SyncBuffer cpu_label_buffer(label_block_size_in_bytes, 1000 * 1024 * 1024 / label_block_size_in_bytes); 
 
-	SyncBuffer gpu_query_buffer(block_size_in_bytes, 500 * 1024 * 1024 / block_size_in_bytes); //500MB
-	SyncBuffer gpu_distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
-	SyncBuffer gpu_label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
+	SyncBuffer gpu_query_buffer(block_size_in_bytes, 1000 * 1024 * 1024 / block_size_in_bytes);
+	SyncBuffer gpu_distance_buffer(distance_block_size_in_bytes, 1000 * 1024 * 1024 / distance_block_size_in_bytes); 
+	SyncBuffer gpu_label_buffer(label_block_size_in_bytes, 1000 * 1024 * 1024 / label_block_size_in_bytes); 
 
 	
 	faiss::Index* cpu_index = load_index(0, 1.0 / cfg.dataset_size_reduction, cfg);
@@ -291,9 +291,9 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	const long distance_block_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
 	const long label_block_size_in_bytes = sizeof(faiss::Index::idx_t) * cfg.k * cfg.block_size;
 
-	SyncBuffer query_buffer(block_size_in_bytes, 500 * 1024 * 1024 / block_size_in_bytes); //500MB
-	SyncBuffer distance_buffer(distance_block_size_in_bytes, 100 * 1024 * 1024 / distance_block_size_in_bytes); //100 MB 
-	SyncBuffer label_buffer(label_block_size_in_bytes, 100 * 1024 * 1024 / label_block_size_in_bytes); //100 MB 
+	SyncBuffer query_buffer(block_size_in_bytes, 1000 * 1024 * 1024 / block_size_in_bytes); 
+	SyncBuffer distance_buffer(distance_block_size_in_bytes, 1000 * 1024 * 1024 / distance_block_size_in_bytes);  
+	SyncBuffer label_buffer(label_block_size_in_bytes, 1000 * 1024 * 1024 / label_block_size_in_bytes);  
 
 	faiss::Index* cpu_index = load_index(0, 1.0 / cfg.dataset_size_reduction, cfg);
 	faiss::Index* gpu_index = nullptr;
