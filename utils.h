@@ -22,8 +22,11 @@ constexpr int AGGREGATOR = 0;
 constexpr int GENERATOR = 1;
 
 double now();
-int *ivecs_read(const char *fname, int *d_out, int *n_out);
-float *fvecs_read (const char *fname, int *d_out, int *n_out);
+//TODO: change to receive string instead of const char*
+int *ivecs_read(const char* fname, int* d_out, long* n_out);
+float *fvecs_read (const char* fname, int* d_out, long* n_out);
+unsigned char* bvecs_read(const char* fname, int* d_out, long* n_out);
+float* to_float_array(unsigned char* vector, int ne, int d);
 double poisson_interval(double mean_interval);
 std::pair<int, int> longest_contiguous_region(double tolerance, std::vector<double>& time_per_block);
 bool file_exists(char* name);

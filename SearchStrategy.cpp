@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <unistd.h>
+#include <boost/filesystem.hpp>
 #include "faiss/gpu/GpuCloner.h"
 
 SearchStrategy::SearchStrategy(int num_queues, float _base_start, float _base_end, bool usesCPU, bool usesGPU, faiss::gpu::StandardGpuResources* _res) :
@@ -26,14 +27,20 @@ SearchStrategy::SearchStrategy(int num_queues, float _base_start, float _base_en
 	if (usesGPU) load_bench_data(false, best_block_point_gpu, best_block_point_gpu_time);
 }
 
+//TODO: unite this function with std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, Config& cfg) 
 void SearchStrategy::load_bench_data(bool cpu, long& best, double& best_time) {
+	auto index_path = boost::filesystem::path(cfg.index_path);
+	auto parent_path = index_path.parent_path();
+	auto filename = index_path.filename();
+
 	char file_path[100];
-	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d", PROF_ROOT, cpu ? "cpu" : "gpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+	bool gpu = !cpu;
+	sprintf(file_path, "%s/%s-k%d-w%d-b%d-d%ld-%s", parent_path.c_str(), gpu ? "g" : "c", cfg.k, cfg.nprobe, cfg.block_size, cfg.dataset_size_reduction, filename.c_str());
 	std::ifstream file;
 	file.open(file_path);
 
 	if (!file.good()) {
-		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d doesn't exist\n", PROF_ROOT, cpu ? "cpu" : "gpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+		std::printf("File %s doesn't exist\n", file_path);
 		std::exit(-1);
 	}
 

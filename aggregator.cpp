@@ -60,19 +60,13 @@ static void aggregate_query(std::queue<PartialResult>* queue, int nshards, faiss
 
 
 static faiss::Index::idx_t* load_gt(Config& cfg) {
-	//	 load ground-truth and convert int to long
-	char idx_path[1000];
-	char gt_path[500];
-	sprintf(gt_path, "%s/gnd", SRC_PATH);
-	sprintf(idx_path, "%s/idx_%dM.ivecs", gt_path, cfg.nb / 1000000);
-
-	int n_out;
+	long n_out;
 	int db_k;
-	int *gt_int = ivecs_read(idx_path, &db_k, &n_out);
+	int *gt_int = ivecs_read(cfg.gnd_path.c_str(), &db_k, &n_out);
 
-	faiss::Index::idx_t* gt = new faiss::Index::idx_t[cfg.k * cfg.nq];
+	faiss::Index::idx_t* gt = new faiss::Index::idx_t[cfg.k * cfg.distinct_queries];
 
-	for (int i = 0; i < cfg.nq; i++) {
+	for (int i = 0; i < cfg.distinct_queries; i++) {
 		for (int j = 0; j < cfg.k; j++) {
 			gt[i * cfg.k + j] = gt_int[i * db_k + j];
 		}
@@ -101,7 +95,7 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 	
 	for (int i = 0; i < cfg.num_blocks * cfg.block_size; i++) {
 		int answer_id = i % (cfg.num_blocks * cfg.block_size);
-		int nq = i % cfg.nq;
+		int nq = i % cfg.distinct_queries;
 		int gt_nn = gt[nq * cfg.k];
 		
 		for (int j = 0; j < cfg.k; j++) {
@@ -112,10 +106,10 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 			}
 		}
 	}
-
-	deb("R@1 = %.4f", n_1 / float(cfg.num_blocks * cfg.block_size));
-	deb("R@10 = %.4f", n_10 / float(cfg.num_blocks * cfg.block_size));
-	deb("R@100 = %.4f", n_100 / float(cfg.num_blocks * cfg.block_size));
+	
+	std::printf("R@1 = %.4f\n", n_1 / float(cfg.num_blocks * cfg.block_size));
+	std::printf("R@10 = %.4f\n", n_10 / float(cfg.num_blocks * cfg.block_size));
+	std::printf("R@100 = %.4f\n", n_100 / float(cfg.num_blocks * cfg.block_size));
 	
 	delete [] gt;
 }
@@ -197,7 +191,7 @@ void aggregator(int nshards, Config& cfg) {
 	deb("aggregating took %lf", time);
 	
 	if (cfg.exec_type != ExecType::Bench) {
-		show_recall(answers, cfg); 
+		if (cfg.show_recall) show_recall(answers, cfg); 
 		send_times(end_times, cfg.num_blocks * cfg.block_size);
 	}
 	

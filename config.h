@@ -5,10 +5,6 @@
 #include <mpi.h>
 
 constexpr long BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
-
-constexpr char SRC_PATH[] = "../bigann"; //folder where the bigann database is stored
-constexpr char INDEX_ROOT[] = "../index"; //folder where the indexed databases are stored
-constexpr char PROF_ROOT[] = "prof"; //folder where the indexed databases are stored
 constexpr long BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
 
 enum class RequestDistribution {Constant, Variable_Poisson};
@@ -21,10 +17,12 @@ class SearchStrategy;
 struct Config {
 	//database config
 	const long d = 128; //vector dimension
-	long nb = 500000000; //database size
-	const long ncentroids = 4096; //number of centroids
-	const long m = 8; //vector size after compression, in bytes
-	const long nq = 10000; //total number of distinct queries
+	const std::string index_path = "/home/rafael/mestrado/sift500m/index_500000000_4096_8";
+	const std::string queries_path = "/home/rafael/Downloads/bigann_query.bvecs";
+	long distinct_queries = 10000;
+	const std::string gnd_path = "/home/rafael/Downloads/bigann_gnd/gnd/idx_500M.ivecs";
+	const long dataset_size_reduction = 1; //TODO: implement this
+	
 	
 	//runtime config
 	const long k = 10;
@@ -35,6 +33,7 @@ struct Config {
 	const long seed = 2;
 	const long temp_memory_gpu = 0;
 	const long poisson_intervals = 100;
+	const bool show_recall = true;
 	
 	RequestDistribution request_distribution;
 	long num_blocks = 100000 / block_size; 

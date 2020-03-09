@@ -9,51 +9,16 @@
 #include <cstring>
 #include "ExecPolicy.h"
 
-static unsigned char* bvecs_read(const char *fname, size_t* filesize) {
-	FILE *f = fopen(fname, "rb");
-	if (!f) {
-		fprintf(stderr, "could not open %s\n", fname);
-		perror("");
-		abort();
-	}
 
-	struct stat st;
-	fstat(fileno(f), &st);
-	*filesize = st.st_size;
-	
-	unsigned char* dataset = (unsigned char*) mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fileno(f), 0);
-    
-    fclose(f);
-    
-    return dataset;
-}
-
-static float* to_float_array(unsigned char* vector, int ne, int d) {
-	float* res = new float[ne * d];
-	
-	for (int i = 0; i < ne; i++) {
-		vector += 4;
-		
-		for (int cd = 0; cd < d; cd++) {
-			res[i * d + cd] = *vector;
-			vector++;
-		}
-	}
-	
-	return res;
-}
-
-static float* load_queries(int d, int nq) {
-	char query_path[500];
-	sprintf(query_path, "%s/bigann_query.bvecs", SRC_PATH);
-
-	int world_size;
-	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
+static float* load_queries() {
 	//loading queries
-	size_t fz;
-	unsigned char* queries = bvecs_read(query_path, &fz);
-	float* xq = to_float_array(queries, nq, d);
+	int d; 
+	long nqueries;
+
+	unsigned char* queries = bvecs_read(cfg.queries_path.c_str(), &d, &nqueries);
+	assert(nqueries == cfg.distinct_queries);
+	float* xq = to_float_array(queries, cfg.distinct_queries, cfg.d);
+	size_t fz = (4 + cfg.d) * cfg.distinct_queries;
 	munmap(queries, fz);
 	
 	return xq;
@@ -96,7 +61,7 @@ static int next_query(const int test_length, double* start_query_time, Config& c
 		deb("Sent %d/%d queries", qn, test_length);
 	}
 	
-	return (qn - 1) % cfg.nq; 
+	return (qn - 1) % cfg.distinct_queries; 
 }
 
 
@@ -112,7 +77,7 @@ static void waitUntilSearchNodesAreReady(long nshards) {
 }
 
 static void bench_generator(int num_queries, int nshards, Config& cfg) {
-	float* xq = load_queries(cfg.d, cfg.nq);
+	float* xq = load_queries();
 	int nq = cfg.bench_step;
 	
 	assert(num_queries % cfg.bench_step == 0);
@@ -153,7 +118,7 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 }
 
 static void single_block_size_generator(int nshards, double* query_start_time, Config& cfg) {
-	float* xq = load_queries(cfg.d, cfg.nq);
+	float* xq = load_queries();
 	float* query_buffer = new float[cfg.num_blocks * cfg.block_size * cfg.d];
 	float* to_be_deleted = query_buffer;
 	int queries_in_buffer = 0;

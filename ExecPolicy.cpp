@@ -3,6 +3,7 @@
 #include <fstream>
 #include <algorithm>
 #include <future>   
+#include <boost/filesystem.hpp>
 
 long CPUGreedyPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 	long num_blocks = buffer.num_entries();
@@ -193,15 +194,20 @@ long BenchExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 }
 
 void BenchExecPolicy::store_profile_data(bool gpu, Config& cfg) {
-	char checkup_command[100];
-	sprintf(checkup_command, "mkdir -p %s", PROF_ROOT);
-	system(checkup_command); //to make sure that the "prof" dir exists
+	auto index_path = boost::filesystem::path(cfg.index_path);
+	auto parent_path = index_path.parent_path();
+	auto filename = index_path.filename();
 
-	//now we write the time data on a file
 	char file_path[100];
-	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+	
+	sprintf(file_path, "%s/%s-k%d-w%d-b%d-d%ld-%s", parent_path.c_str(), gpu ? "g" : "c", cfg.k, cfg.nprobe, cfg.block_size, cfg.dataset_size_reduction, filename.c_str());
 	std::ofstream file;
 	file.open(file_path);
+
+	if (! file.good()) {
+		std::printf("Unable to create file %s\n", file_path);
+		std::exit(-1);
+	}
 
 	std::vector<double>& procTimes = gpu ? procTimesGpu : procTimesCpu;
 	
@@ -227,13 +233,18 @@ void BenchExecPolicy::store_profile_data(bool gpu, Config& cfg) {
 }
 
 std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, Config& cfg) {
+	auto index_path = boost::filesystem::path(cfg.index_path);
+	auto parent_path = index_path.parent_path();
+	auto filename = index_path.filename();
+	
+	
 	char file_path[100];
-	sprintf(file_path, "%s/%s_%d_%d_%d_%d_%d_%d", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+	sprintf(file_path, "%s/%s-k%d-w%d-b%d-d%ld-%s", parent_path.c_str(), gpu ? "g" : "c", cfg.k, cfg.nprobe, cfg.block_size, cfg.dataset_size_reduction, filename.c_str());
 	std::ifstream file;
 	file.open(file_path);
 
 	if (!file.good()) {
-		std::printf("File %s/%s_%d_%d_%d_%d_%d_%d doesn't exist\n", PROF_ROOT, gpu ? "gpu" : "cpu", cfg.nb, cfg.ncentroids, cfg.m, cfg.k, cfg.nprobe, cfg.block_size);
+		std::printf("File %s doesn't exist\n", file_path);
 		std::exit(-1);
 	}
 

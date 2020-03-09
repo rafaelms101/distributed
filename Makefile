@@ -18,19 +18,7 @@ FAISS_LIB = $(FAISS_HOME)/libfaiss.a
 	$(MPI) -g -std=c++11  $(OPT) $(CPPFLAGS) -o $@ -c $< $(FAISS_INCLUDE) 
 
 sharded: config.o utils.o readSplittedIndex.o generator.o search.o aggregator.o ExecPolicy.o Buffer.o SyncBuffer.o SearchStrategy.o sharded.o $(FAISS_LIB)
-	$(MPI) -g -std=c++11 $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS) 
-
-train: train.o $(FAISS_LIB)
-	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
-
-simple: readSplittedIndex.o simple.o $(FAISS_LIB)
-	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
-
-simple_hybrid: readSplittedIndex.o simple_hybrid.o $(FAISS_LIB)
-	$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
-
-recall: recall.o $(FAISS_LIB)
-		$(CXX) $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS)
+	$(MPI) -g -std=c++11 $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS) -lboost_filesystem -Wall
 
 clean:
 	rm -f *.o sharded train simple recall simple_hybrid

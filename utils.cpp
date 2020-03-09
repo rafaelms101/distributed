@@ -8,6 +8,8 @@
 #include <fstream>
 #include <random>
 #include <sys/stat.h>
+#include <mpi.h>
+#include <sys/mman.h>
 
 #include "readSplittedIndex.h"
 #include "faiss/IndexIVFPQ.h"
@@ -22,11 +24,12 @@ double now() {
 
 
 // not very clean, but works as long as sizeof(int) == sizeof(float)
-int *ivecs_read(const char *fname, int *d_out, int *n_out) {
+int* ivecs_read(const char *fname, int *d_out, long *n_out) {
+	assert(sizeof(int) == sizeof(float));
     return (int*)fvecs_read(fname, d_out, n_out);
 }
 
-float * fvecs_read (const char *fname, int *d_out, int *n_out) {
+float* fvecs_read (const char *fname, int *d_out, long *n_out) {
     FILE *f = fopen(fname, "r");
     if(!f) {
         fprintf(stderr, "could not open %s\n", fname);
@@ -55,6 +58,44 @@ float * fvecs_read (const char *fname, int *d_out, int *n_out) {
 
     fclose(f);
     return x;
+}
+
+unsigned char* bvecs_read(const char *fname, int* d_out, long* n_out) {
+	FILE *f = fopen(fname, "rb");
+	
+	if (!f) {
+		fprintf(stderr, "could not open %s\n", fname);
+		perror("");
+		abort();
+	}
+
+	struct stat st;
+	fstat(fileno(f), &st);
+	auto filesize = st.st_size;
+	
+	unsigned char* dataset = (unsigned char*) mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fileno(f), 0);
+	int* intptr = (int*) dataset;
+	*d_out = intptr[0];
+	*n_out = filesize / (4 + *d_out);
+    
+    fclose(f);
+    
+    return dataset;
+}
+
+float* to_float_array(unsigned char* vector, int ne, int d) {
+	float* res = new float[ne * d];
+	
+	for (int i = 0; i < ne; i++) {
+		vector += 4;
+		
+		for (int cd = 0; cd < d; cd++) {
+			res[i * d + cd] = *vector;
+			vector++;
+		}
+	}
+	
+	return res;
 }
 
 double poisson_interval(double mean_interval) {
@@ -99,26 +140,23 @@ std::pair<int, int> longest_contiguous_region(double tolerance, std::vector<doub
 	return std::pair<int, int>(bestStart, bestEnd);
 }
 
-bool file_exists(char* name) {
+bool file_exists(const char* name) {
   struct stat buffer;   
   return stat(name, &buffer) == 0; 
 }
 
 faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cfg) {
 	deb("Started loading");
-	
-	char index_path[500];
-	sprintf(index_path, "%s/index_%d_%d_%d", INDEX_ROOT, cfg.nb, cfg.ncentroids, cfg.m);
 
-	if (! file_exists(index_path)) {
-		std::printf("%s doesnt exist\n", index_path);
+	if (! file_exists(cfg.index_path.c_str())) {
+		std::printf("%s doesnt exist\n", cfg.index_path);
 	}
 	
 //	std::printf("%d) Loading file: %s\n", cfg.shard, index_path);
 	
 	auto before = now();
 	
-	FILE* index_file = fopen(index_path, "r");
+	FILE* index_file = fopen(cfg.index_path.c_str(), "r");
 	auto cpu_index = dynamic_cast<faiss::IndexIVFPQ*>(read_index(index_file, start_percent, end_percent));
 
 //	std::printf("%d) Load finished. Took %lf\n", cfg.shard, now() - before);
