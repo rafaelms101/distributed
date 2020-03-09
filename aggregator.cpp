@@ -108,8 +108,15 @@ static void show_recall(faiss::Index::idx_t* answers, Config& cfg) {
 	}
 	
 	std::printf("R@1 = %.4f\n", n_1 / float(cfg.num_blocks * cfg.block_size));
-	std::printf("R@10 = %.4f\n", n_10 / float(cfg.num_blocks * cfg.block_size));
-	std::printf("R@100 = %.4f\n", n_100 / float(cfg.num_blocks * cfg.block_size));
+	
+	if (cfg.k >= 10) {
+		std::printf("R@10 = %.4f\n", n_10 / float(cfg.num_blocks * cfg.block_size));
+	}
+	
+	if (cfg.k >= 100) {
+		std::printf("R@100 = %.4f\n", n_100 / float(cfg.num_blocks * cfg.block_size));
+	}
+	
 	
 	delete [] gt;
 }
