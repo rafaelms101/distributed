@@ -15,13 +15,15 @@ class ExecPolicy;
 class SearchStrategy;
 
 struct Config {
+	void loadConfig(std::string filename);
+	
 	//database config
-	const long d = 128; //vector dimension
-	const std::string index_path = "/home/rafael/mestrado/sift500m/index_500000000_4096_8";
-	const std::string queries_path = "/home/rafael/Downloads/bigann_query.bvecs";
-	long distinct_queries = 10000;
-	const std::string gnd_path = "/home/rafael/Downloads/bigann_gnd/gnd/idx_500M.ivecs";
-	long dataset_size_reduction = 1;
+	long d; //vector dimension
+	std::string index_path;  
+	std::string queries_path; 
+	long distinct_queries;
+	std::string gnd_path ;
+	long dataset_size_reduction;
 	
 	
 	//runtime config
@@ -33,7 +35,7 @@ struct Config {
 	const long seed = 2;
 	const long temp_memory_gpu = 0;
 	const long poisson_intervals = 100;
-	const bool show_recall = true;
+	bool show_recall = true;
 	
 	RequestDistribution request_distribution;
 	long num_blocks = 100000 / block_size; 

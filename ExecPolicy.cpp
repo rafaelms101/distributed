@@ -309,12 +309,7 @@ void DynamicExecPolicy::setup() {
 
 	pdGPU.times = new double[pdGPU.min_block + 1];
 	pdGPU.times[0] = 0;
-	for (long nb = 1; nb <= pdGPU.min_block; nb++)
-		pdGPU.times[nb] = times[nb];
-
-	deb("min=%d, max=%d", pdGPU.min_block * cfg.block_size, pdGPU.max_block * cfg.block_size);
-	//	std::printf("min=%d\n", pd.min_block * cfg.block_size);
-	assert(pdGPU.max_block <= cfg.num_blocks);
+	for (long nb = 1; nb <= pdGPU.min_block; nb++) pdGPU.times[nb] = times[nb];
 }
 
 long MinExecPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
