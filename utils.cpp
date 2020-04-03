@@ -149,7 +149,7 @@ faiss::IndexIVFPQ* load_index(float start_percent, float end_percent, Config& cf
 	deb("Started loading");
 
 	if (! file_exists(cfg.index_path.c_str())) {
-		std::printf("%s doesnt exist\n", cfg.index_path);
+		std::printf("%s doesnt exist\n", cfg.index_path.c_str());
 	}
 	
 //	std::printf("%d) Loading file: %s\n", cfg.shard, index_path);

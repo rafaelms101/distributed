@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <mpi.h>
+#include <string>
 
 constexpr long BENCH_SIZE = 1000; //upper limit on maximum block size when in benchmark mode
 constexpr long BENCH_REPEATS = 3; //number of times that a certain number of queries will be executed while in benchmark mode
