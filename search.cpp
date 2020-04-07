@@ -23,6 +23,7 @@
 #include "ExecPolicy.h"
 #include "SearchStrategy.h"
 
+//TODO: unify comm_handler and comm_handler_both, somehow
 static void comm_handler(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, std::vector<SyncBuffer*>& query_buffer) {
 	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
 	long blocks_sent = 0;
@@ -35,22 +36,20 @@ static void comm_handler(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, 
 		if (blocks_sent < cfg.num_blocks && distance_buffer->num_entries() >= 1 && label_buffer->num_entries() >= 1) {
 			auto ready = std::min(distance_buffer->num_entries(), label_buffer->num_entries());
 
-			if (ready >= 1) {
-				double before = now();
-
-				blocks_sent += ready;
+			for (int i = 0; i < ready; i++) {
+				blocks_sent++;
 
 				void* label_ptr = label_buffer->front();
 				void* dist_ptr = distance_buffer->front();
 
 				//TODO: Optimize this to an Immediate Synchronous Send
-				MPI_Ssend(label_ptr, cfg.k * cfg.block_size * ready, MPI_LONG,
+				MPI_Ssend(label_ptr, cfg.k * cfg.block_size, MPI_LONG,
 						AGGREGATOR, 0, MPI_COMM_WORLD);
-				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * ready, MPI_FLOAT,
+				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size, MPI_FLOAT,
 						AGGREGATOR, 1, MPI_COMM_WORLD);
 
-				label_buffer->remove(ready);
-				distance_buffer->remove(ready);
+				label_buffer->remove(1);
+				distance_buffer->remove(1);
 			}
 		}
 
@@ -82,30 +81,30 @@ static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_distance_buffer, S
 		if (blocks_sent < cfg.num_blocks) {
 			auto readyGPU = std::min(gpu_distance_buffer->num_entries(), gpu_label_buffer->num_entries());
 
-			if (readyGPU >= 1) {
-				blocks_sent += readyGPU;
+			for (int i = 0; i < readyGPU; i++) {
+				blocks_sent++;
 
 				void* label_ptr = gpu_label_buffer->front();
 				void* dist_ptr = gpu_distance_buffer->front();
 
 				//TODO: Optimize this to an Immediate Synchronous Send
-				MPI_Ssend(label_ptr, cfg.k * cfg.block_size * readyGPU, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * readyGPU, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+				MPI_Ssend(label_ptr, cfg.k * cfg.block_size, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
 
-				gpu_label_buffer->remove(readyGPU);
-				gpu_distance_buffer->remove(readyGPU);
+				gpu_label_buffer->remove(1);
+				gpu_distance_buffer->remove(1);
 			}
 
 			auto readyCPU = std::min(cpu_distance_buffer->num_entries(), cpu_label_buffer->num_entries());
 
-			if (readyCPU >= 1) {
-				blocks_sent += readyCPU;
+			for (int i = 0; i < readyCPU; i++) {
+				blocks_sent++;
 
 				void* label_ptr = cpu_label_buffer->front();
 				void* dist_ptr = cpu_distance_buffer->front();
 
-				MPI_Ssend(label_ptr, cfg.k * cfg.block_size * readyCPU, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size * readyCPU, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+				MPI_Ssend(label_ptr, cfg.k * cfg.block_size, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
 
 				cpu_label_buffer->remove(readyCPU);
 				cpu_distance_buffer->remove(readyCPU);

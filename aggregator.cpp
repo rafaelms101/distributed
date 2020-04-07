@@ -131,13 +131,9 @@ void aggregator(int nshards, Config& cfg) {
 	
 	std::queue<PartialResult> queue[nshards];
 	std::queue<PartialResult> to_delete;
-	
-	deb("Aggregator node is ready");
 
 	long queries_remaining = cfg.num_blocks * cfg.block_size;
 	long qn = 0;
-	
-	double time = 0;
 	
 	std::vector<long> remaining_queries_per_shard(nshards);
 	for (int shard = 0; shard < nshards; shard++) {
@@ -146,24 +142,18 @@ void aggregator(int nshards, Config& cfg) {
 
 	while (queries_remaining >= 1) {
 		MPI_Status status;
-		MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
 		
-		int message_size;
-		MPI_Get_count(&status, MPI_LONG, &message_size);
+		auto I = new faiss::Index::idx_t[cfg.k * cfg.block_size];
+		auto D = new float[cfg.k * cfg.block_size];
 
-		int qty = message_size / cfg.k;
-		
-		auto I = new faiss::Index::idx_t[cfg.k * qty];
-		auto D = new float[cfg.k * qty];
-
-		MPI_Recv(I, cfg.k * qty, MPI_LONG, status.MPI_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		MPI_Recv(D, cfg.k * qty, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		MPI_Recv(I, cfg.k * cfg.block_size, MPI_LONG, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+		MPI_Recv(D, cfg.k * cfg.block_size, MPI_FLOAT, status.MPI_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
 		int shard = status.MPI_SOURCE - 2;
-		remaining_queries_per_shard[shard] -= qty;
+		remaining_queries_per_shard[shard] -= cfg.block_size;
 		
-		for (int q = 0; q < qty; q++) {
-			queue[shard].push({ D + cfg.k * q, I + cfg.k * q, q == qty - 1, D, I });
+		for (int q = 0; q < cfg.block_size; q++) {
+			queue[shard].push({ D + cfg.k * q, I + cfg.k * q, q == cfg.block_size - 1, D, I });
 		}
 		
 		while (true) {
@@ -178,29 +168,16 @@ void aggregator(int nshards, Config& cfg) {
 			
 			if (hasEmpty) break;
 
-			double before = now();
-			
 			aggregate_query(queue, nshards, answers + (qn % (cfg.num_blocks * cfg.block_size)) * cfg.k, cfg.k);
 			queries_remaining--;
 			qn++;
 			
 			end_times.push_back(now());
-			
-			if (qn >= target) {
-//				std::printf("%d queries remaining\n", queries_remaining);
-				target += target_delta;
-			}
-			
-			time += now() - before;
 		}
 	}
-	
-	deb("aggregating took %lf", time);
 	
 	if (cfg.exec_type != ExecType::Bench) {
 		if (cfg.show_recall) show_recall(answers, cfg); 
 		send_times(end_times, cfg.num_blocks * cfg.block_size);
 	}
-	
-	deb("Finished aggregator");
 }
