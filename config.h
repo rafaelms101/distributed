@@ -36,14 +36,13 @@ struct Config {
 	const long seed = 2;
 	const long temp_memory_gpu = 0;
 	const long poisson_intervals = 100;
-	bool show_recall = true;
+	bool show_recall = false;
 	
 	RequestDistribution request_distribution;
 	long num_blocks = 100000 / block_size; 
 	bool bench_cpu = false;
 	bool bench_gpu = false;
 	double query_load;
-	
 	
 	//mode specific config
 	double gpu_throughput;
@@ -59,6 +58,7 @@ struct Config {
 	SearchAlgorithm search_algorithm;
 	
 	int shard;
+	int nshards;
 	
 	double raw_search_time = 0;
 	

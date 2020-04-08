@@ -7,7 +7,7 @@
 
 long CPUGreedyPolicy::numBlocksRequired(SyncBuffer& buffer, Config& cfg) {
 	long num_blocks = buffer.num_entries();
-	return std::min(num_blocks, 2000L);
+	return std::min(num_blocks, 200L);
 }
 
 //TODO: add this to the HybridPolicy class
@@ -200,7 +200,7 @@ void BenchExecPolicy::store_profile_data(bool gpu, Config& cfg) {
 
 	char file_path[100];
 	
-	sprintf(file_path, "%s/%s-k%d-w%d-b%d-d%ld-%s", parent_path.c_str(), gpu ? "g" : "c", cfg.k, cfg.nprobe, cfg.block_size, cfg.dataset_size_reduction, filename.c_str());
+	sprintf(file_path, "%s/%s-k%d-w%d-b%d-d%ld-%s", parent_path.c_str(), gpu ? "g" : "c", cfg.k, cfg.nprobe, cfg.block_size, cfg.dataset_size_reduction * cfg.nshards, filename.c_str());
 	std::ofstream file;
 	file.open(file_path);
 
@@ -232,6 +232,7 @@ void BenchExecPolicy::store_profile_data(bool gpu, Config& cfg) {
 	file.close();
 }
 
+//TODO: unite this with the one from SearchStrategy
 std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, Config& cfg) {
 	auto index_path = boost::filesystem::path(cfg.index_path);
 	auto parent_path = index_path.parent_path();
@@ -239,7 +240,7 @@ std::vector<double> BenchExecPolicy::load_prof_times(bool gpu, Config& cfg) {
 	
 	
 	char file_path[100];
-	sprintf(file_path, "%s/%s-k%d-w%d-b%d-d%ld-%s", parent_path.c_str(), gpu ? "g" : "c", cfg.k, cfg.nprobe, cfg.block_size, cfg.dataset_size_reduction, filename.c_str());
+	sprintf(file_path, "%s/%s-k%d-w%d-b%d-d%ld-%s", parent_path.c_str(), gpu ? "g" : "c", cfg.k, cfg.nprobe, cfg.block_size, cfg.dataset_size_reduction * cfg.nshards, filename.c_str());
 	std::ifstream file;
 	file.open(file_path);
 

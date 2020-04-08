@@ -120,20 +120,20 @@ static void bench_generator(int num_queries, int nshards, Config& cfg) {
 
 static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 	double total = 0;
-	double block_total = 0;
-	int nq_block = 0;
-	int block_size = cfg.num_blocks * cfg.block_size / cfg.poisson_intervals;
-	
+	double start = now();
+	double end = 0;
+
 	for (int q = 0; q < cfg.num_blocks * cfg.block_size; q++) {
 		auto response_time = end_time[q] - start_time[q];
-
+		
+		start = std::min(start, start_time[q]);
+		end = std::max(end, end_time[q]);
+		
 		total += response_time;
-		block_total += response_time;
-		nq_block++;
 	}
 	
 	std::printf("%lf\n", total / (cfg.num_blocks * cfg.block_size));
-	std::printf("%lf\n", end_time[(cfg.num_blocks * cfg.block_size) - 1] - start_time[0]);
+	std::printf("%lf\n", end - start);
 	
 	std::fflush(stdout);
 }
@@ -202,7 +202,7 @@ static double* query_start_time(double (*next_interval)(double), double param, C
 }
 
 //TODO: make generator a class
-void generator(int nshards, Config& cfg) {
+void generator() {
 	double* query_start;
 	
 	if (cfg.exec_type != ExecType::Bench) {
@@ -226,6 +226,6 @@ void generator(int nshards, Config& cfg) {
 		}
 	}
 
-	if (cfg.exec_type == ExecType::Bench) bench_generator(BENCH_SIZE, nshards, cfg);
-	else single_block_size_generator(nshards, query_start, cfg);
+	if (cfg.exec_type == ExecType::Bench) bench_generator(BENCH_SIZE, cfg.nshards, cfg);
+	else single_block_size_generator(cfg.nshards, query_start, cfg);
 }

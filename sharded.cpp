@@ -184,10 +184,10 @@ int main(int argc, char* argv[]) {
     cfg.loadConfig(argv[1]);
     
     
-    int shard = world_rank - 2;
-    int nshards = world_size - 2;
+    cfg.shard = world_rank - 2;
+    cfg.nshards = world_size - 2;
     
-    handle_parameters(argc, &argv[1], shard);
+    handle_parameters(argc, &argv[1], cfg.shard);
     
     srand(cfg.seed);
     
@@ -202,21 +202,20 @@ int main(int argc, char* argv[]) {
 //    
 //    //TODO: remember to pass the right amount of blocks in the bench case
     if (world_rank == 1) {
-    	generator(nshards, cfg);
+    	generator();
     } else if (world_rank == 0) {
-    	aggregator(nshards, cfg);
+    	aggregator();
     } else {
 //    	logSearchStart(shard);
-    	cfg.shard = shard;
-    	
     	if (cfg.exec_type == ExecType::Bench) {
-    		search_single(shard, cfg.exec_policy, cfg.num_blocks);
+    		assert(cfg.nshards == 1);
+    		search_single(cfg.exec_policy, cfg.num_blocks);
     	} else if (cfg.exec_type == ExecType::Single) {
-    		search_single(shard, cfg.exec_policy, cfg.num_blocks);
+    		search_single(cfg.exec_policy, cfg.num_blocks);
     	} else if (cfg.exec_type == ExecType::Both) {
-    		search_both(shard, new CPUGreedyPolicy(), cfg.exec_policy, cfg.num_blocks, cfg.gpu_throughput, cfg.cpu_throughput);
+    		search_both(new CPUGreedyPolicy(), cfg.exec_policy, cfg.num_blocks, cfg.gpu_throughput, cfg.cpu_throughput);
     	} else if (cfg.exec_type == ExecType::OutOfCore) {
-    		search_out(shard, cfg.search_algorithm);
+    		search_out(cfg.search_algorithm);
     	}
     }
     

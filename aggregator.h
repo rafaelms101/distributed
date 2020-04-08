@@ -4,6 +4,6 @@
 #include "utils.h"
 #include "config.h"
 
-void aggregator(int nshards, Config& cfg);
+void aggregator();
 
 #endif /* AGGREGATOR_H_ */

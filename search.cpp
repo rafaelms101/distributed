@@ -6,6 +6,7 @@
 #include <fstream>
 #include <unistd.h>
 #include <thread> 
+#include <queue>
 
 #include "faiss/index_io.h"
 #include "faiss/IndexFlat.h"
@@ -37,17 +38,15 @@ static void comm_handler(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, 
 			auto ready = std::min(distance_buffer->num_entries(), label_buffer->num_entries());
 
 			for (int i = 0; i < ready; i++) {
-				blocks_sent++;
-
 				void* label_ptr = label_buffer->front();
 				void* dist_ptr = distance_buffer->front();
 
-				//TODO: Optimize this to an Immediate Synchronous Send
-				MPI_Ssend(label_ptr, cfg.k * cfg.block_size, MPI_LONG,
-						AGGREGATOR, 0, MPI_COMM_WORLD);
-				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size, MPI_FLOAT,
-						AGGREGATOR, 1, MPI_COMM_WORLD);
-
+				//TODO: Optimize this 
+				MPI_Ssend(&blocks_sent, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD); //sending block id
+				MPI_Ssend(label_ptr, cfg.k * cfg.block_size, MPI_LONG, AGGREGATOR, 1, MPI_COMM_WORLD); //sending image ids
+				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size, MPI_FLOAT, AGGREGATOR, 2, MPI_COMM_WORLD); //sending distances
+				
+				blocks_sent++;
 				label_buffer->remove(1);
 				distance_buffer->remove(1);
 			}
@@ -67,49 +66,62 @@ static void comm_handler(SyncBuffer* distance_buffer, SyncBuffer* label_buffer, 
 	deb("Finished sending results");
 }
 
+//TODO: fix me, change tag numbers of msgs (they are wrong)
 static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_distance_buffer, SyncBuffer* cpu_label_buffer, SyncBuffer* gpu_distance_buffer, SyncBuffer* gpu_label_buffer, SyncBuffer* cpu_buffer, SyncBuffer* gpu_buffer) {
 	long blocks_received = 0;
 	int blocks_until_cpu = blocks_gpu;
 	long blocks_sent = 0;
 	
 	byte tmp_buffer[cfg.block_size * cfg.d * sizeof(float)];
+	
+	std::queue<long> cpu_ids;
+	std::queue<long> gpu_ids;
 
 	float dummy;
 	MPI_Send(&dummy, 1, MPI_FLOAT, GENERATOR, 0, MPI_COMM_WORLD); //signal that we are ready to receive queries
 
-	while (blocks_received < cfg.num_blocks || blocks_sent < cfg.num_blocks) {
-		if (blocks_sent < cfg.num_blocks) {
-			auto readyGPU = std::min(gpu_distance_buffer->num_entries(), gpu_label_buffer->num_entries());
+	while (blocks_sent < cfg.num_blocks) {
+		auto readyGPU = std::min(gpu_distance_buffer->num_entries(), gpu_label_buffer->num_entries());
 
-			for (int i = 0; i < readyGPU; i++) {
-				blocks_sent++;
+		for (int i = 0; i < readyGPU; i++) {
+			void* label_ptr = gpu_label_buffer->front();
+			void* dist_ptr = gpu_distance_buffer->front();
+			long block_id = gpu_ids.front();
+			gpu_ids.pop();
 
-				void* label_ptr = gpu_label_buffer->front();
-				void* dist_ptr = gpu_distance_buffer->front();
+			//TODO: Optimize this to an Immediate Synchronous Send
+			MPI_Ssend(&block_id, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+			MPI_Ssend(label_ptr, cfg.k * cfg.block_size, MPI_LONG, AGGREGATOR, 1, MPI_COMM_WORLD);
+			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size, MPI_FLOAT, AGGREGATOR, 2, MPI_COMM_WORLD);
 
-				//TODO: Optimize this to an Immediate Synchronous Send
-				MPI_Ssend(label_ptr, cfg.k * cfg.block_size, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
+			gpu_label_buffer->remove(1);
+			gpu_distance_buffer->remove(1);
 
-				gpu_label_buffer->remove(1);
-				gpu_distance_buffer->remove(1);
-			}
-
-			auto readyCPU = std::min(cpu_distance_buffer->num_entries(), cpu_label_buffer->num_entries());
-
-			for (int i = 0; i < readyCPU; i++) {
-				blocks_sent++;
-
-				void* label_ptr = cpu_label_buffer->front();
-				void* dist_ptr = cpu_distance_buffer->front();
-
-				MPI_Ssend(label_ptr, cfg.k * cfg.block_size, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
-				MPI_Ssend(dist_ptr, cfg.k * cfg.block_size, MPI_FLOAT, AGGREGATOR, 1, MPI_COMM_WORLD);
-
-				cpu_label_buffer->remove(readyCPU);
-				cpu_distance_buffer->remove(readyCPU);
-			}
+			blocks_sent++;
 		}
+
+		auto readyCPU = std::min(cpu_distance_buffer->num_entries(), cpu_label_buffer->num_entries());
+
+		assert(cpu_distance_buffer->num_entries() >= 0);
+		assert(cpu_label_buffer->num_entries() >= 0);
+		assert(readyCPU >= 0);
+
+		for (int i = 0; i < readyCPU; i++) {
+			void* label_ptr = cpu_label_buffer->front();
+			void* dist_ptr = cpu_distance_buffer->front();
+			long block_id = cpu_ids.front();
+			cpu_ids.pop();
+
+			MPI_Ssend(&block_id, 1, MPI_LONG, AGGREGATOR, 0, MPI_COMM_WORLD);
+			MPI_Ssend(label_ptr, cfg.k * cfg.block_size, MPI_LONG, AGGREGATOR, 1, MPI_COMM_WORLD);
+			MPI_Ssend(dist_ptr, cfg.k * cfg.block_size, MPI_FLOAT, AGGREGATOR, 2, MPI_COMM_WORLD);
+
+			cpu_label_buffer->remove(1);
+			cpu_distance_buffer->remove(1);
+
+			blocks_sent++;
+		}
+		
 		
 		if (blocks_received < cfg.num_blocks) {
 			MPI_Bcast(tmp_buffer, cfg.block_size * cfg.d, MPI_FLOAT, 0, cfg.search_comm);
@@ -117,9 +129,11 @@ static void comm_handler_both(int blocks_gpu, SyncBuffer* cpu_distance_buffer, S
 			if (blocks_until_cpu >= 1) {
 				gpu_buffer->insert(1, tmp_buffer);
 				blocks_until_cpu--;
+				gpu_ids.push(blocks_received);
 			} else {
 				cpu_buffer->insert(1, tmp_buffer);
 				blocks_until_cpu = blocks_gpu;
+				cpu_ids.push(blocks_received);
 			}
 
 			blocks_received += 1;	
@@ -131,8 +145,6 @@ static void main_driver(SyncBuffer* query_buffer, SyncBuffer* label_buffer, Sync
 	long nq = 0;
 	
 	auto before = now();
-	
-	deb("Starting to process queries");
 	
 	faiss::Index::idx_t* I = new faiss::Index::idx_t[cfg.num_blocks * cfg.block_size * cfg.k];
 	float* D = new float[cfg.num_blocks * cfg.block_size * cfg.k];
@@ -153,10 +165,7 @@ static void main_driver(SyncBuffer* query_buffer, SyncBuffer* label_buffer, Sync
 		int nqueries = num_blocks * cfg.block_size;
 
 		nq += nqueries;
-		
 		policy->process_buffer(cpu_index, gpu_index, nqueries, *query_buffer, I, D);
-		
-		deb("Processed %d queries. %d already processed. %d left to be processed",  nqueries, nq, blocks_to_be_processed * cfg.block_size);
 
 		label_buffer->insert(num_blocks, (byte*) I);
 		distance_buffer->insert(num_blocks, (byte*) D);
@@ -170,7 +179,7 @@ static void main_driver(SyncBuffer* query_buffer, SyncBuffer* label_buffer, Sync
 	deb("%d) Search node took %lf. Raw time: %lf. Queries: %ld", cfg.shard, now() - before, cfg.raw_search_time, nq);
 }
 
-void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long num_blocks, double gpu_throughput, double cpu_throughput) {
+void search_both(ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long num_blocks, double gpu_throughput, double cpu_throughput) {
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	const long distance_block_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
 	const long label_block_size_in_bytes = sizeof(faiss::Index::idx_t) * cfg.k * cfg.block_size;
@@ -183,12 +192,15 @@ void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long
 	SyncBuffer gpu_distance_buffer(distance_block_size_in_bytes, 1000 * 1024 * 1024 / distance_block_size_in_bytes); 
 	SyncBuffer gpu_label_buffer(label_block_size_in_bytes, 1000 * 1024 * 1024 / label_block_size_in_bytes); 
 
-	
-	faiss::Index* cpu_index = load_index(0, 1.0 / cfg.dataset_size_reduction, cfg);
+	auto max_size = 1.0 / cfg.dataset_size_reduction;
+	auto slice_size = max_size / cfg.nshards;
+	auto start_slice = slice_size * cfg.shard;
+	auto end_slice = start_slice + slice_size;
+	faiss::Index* cpu_index = load_index(start_slice, end_slice, cfg);
 	
 	faiss::gpu::StandardGpuResources res;
 	if (cfg.temp_memory_gpu > 0) res.setTempMemory(cfg.temp_memory_gpu);
-	faiss::Index* gpu_index = faiss::gpu::index_cpu_to_gpu(&res, shard % cfg.gpus_per_node, cpu_index, nullptr);
+	faiss::Index* gpu_index = faiss::gpu::index_cpu_to_gpu(&res, cfg.shard % cfg.gpus_per_node, cpu_index, nullptr);
 	 
 	long gpu_blocks_per_cpu_block = std::nearbyint(gpu_throughput / cpu_throughput);
 	long blocks_cpu = num_blocks / (gpu_blocks_per_cpu_block + 1);
@@ -206,7 +218,7 @@ void search_both(int shard, ExecPolicy* cpu_policy, ExecPolicy* gpu_policy, long
 	cpu_thread.join();
 }
 
-void search_single(int shard, ExecPolicy* policy, long num_blocks) {
+void search_single(ExecPolicy* policy, long num_blocks) {
 	const long block_size_in_bytes = sizeof(float) * cfg.d * cfg.block_size;
 	const long distance_block_size_in_bytes = sizeof(float) * cfg.k * cfg.block_size;
 	const long label_block_size_in_bytes = sizeof(faiss::Index::idx_t) * cfg.k * cfg.block_size;
@@ -215,19 +227,20 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	SyncBuffer distance_buffer(distance_block_size_in_bytes, 1000 * 1024 * 1024 / distance_block_size_in_bytes);  
 	SyncBuffer label_buffer(label_block_size_in_bytes, 1000 * 1024 * 1024 / label_block_size_in_bytes);  
 
-	faiss::Index* cpu_index = load_index(0, 1.0 / cfg.dataset_size_reduction, cfg);
+	auto max_size = 1.0 / cfg.dataset_size_reduction;
+	auto slice_size = max_size / cfg.nshards;
+	auto start_slice = slice_size * cfg.shard;
+	auto end_slice = start_slice + slice_size;
+	faiss::Index* cpu_index = load_index(start_slice, end_slice, cfg);
 	faiss::Index* gpu_index = nullptr;
 		
 
 	faiss::gpu::StandardGpuResources* res = nullptr;
 	
 	if (policy->usesGPU()) {
-		deb("Transfering base to the GPU. Shard=%d", shard);
-		
 		res = new faiss::gpu::StandardGpuResources();
 		if (cfg.temp_memory_gpu > 0) res->setTempMemory(cfg.temp_memory_gpu);
-		gpu_index = faiss::gpu::index_cpu_to_gpu(res, shard % cfg.gpus_per_node, cpu_index, nullptr);
-		deb("Base transferred to the GPU");
+		gpu_index = faiss::gpu::index_cpu_to_gpu(res, cfg.shard % cfg.gpus_per_node, cpu_index, nullptr);
 	} 
 
 	policy->setup();
@@ -242,13 +255,15 @@ void search_single(int shard, ExecPolicy* policy, long num_blocks) {
 	comm_thread.join();
 }
 
-void search_out(int shard, SearchAlgorithm search_algorithm) {
+void search_out(SearchAlgorithm search_algorithm) {
 	deb("search called");
 
 	SearchStrategy* strategy;
 
-	float base_start = 0;
-	float base_end = 1.0 / cfg.dataset_size_reduction;
+	auto max_size = 1.0 / cfg.dataset_size_reduction;
+	auto slice_size = max_size / cfg.nshards;
+	auto base_start = slice_size * cfg.shard;
+	auto base_end = base_start + slice_size;
 
 	faiss::gpu::StandardGpuResources res;
 	if (cfg.temp_memory_gpu > 0) res.setTempMemory(cfg.temp_memory_gpu);

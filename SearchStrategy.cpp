@@ -35,7 +35,7 @@ void SearchStrategy::load_bench_data(bool cpu, long& best, double& best_time) {
 
 	char file_path[100];
 	bool gpu = !cpu;
-	sprintf(file_path, "%s/%s-k%d-w%d-b%d-d%ld-%s", parent_path.c_str(), gpu ? "g" : "c", cfg.k, cfg.nprobe, cfg.block_size, cfg.dataset_size_reduction * cfg.total_pieces, filename.c_str());
+	sprintf(file_path, "%s/%s-k%d-w%d-b%d-d%ld-%s", parent_path.c_str(), gpu ? "g" : "c", cfg.k, cfg.nprobe, cfg.block_size, cfg.dataset_size_reduction * cfg.total_pieces * cfg.nshards, filename.c_str());
 	std::ifstream file;
 	file.open(file_path);
 

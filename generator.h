@@ -4,6 +4,6 @@
 #include "utils.h"
 #include "config.h"
 
-void generator(int nshards, Config& cfg);
+void generator();
 
 #endif
