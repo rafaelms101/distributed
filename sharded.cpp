@@ -193,7 +193,8 @@ int main(int argc, char* argv[]) {
     MPI_Comm_create_group(MPI_COMM_WORLD, search_group, 112758, &cfg.search_comm);
     
     if (argc <= 1) {
-    	std::printf("Missing dataset file\n");
+    	std::printf("Missing database config file\n");
+    	std::printf("./sharded <dataset file> b <cpu|gpu|both> <parts> | sharded <dataset file> <c|p> <queries / second> <s|o> <alg params> | sharded <dataset file> <c|p> <queries / second> b <gpu_throughput> <cpu_throughput> <alg params>\n");
     	MPI_Finalize();
     	return -1;
     }
