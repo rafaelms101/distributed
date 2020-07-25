@@ -23,6 +23,6 @@ sharded: config.o utils.o readSplittedIndex.o generator.o search.o aggregator.o 
 	$(MPI) -g -std=c++11 $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS) -lboost_filesystem -Wall
 
 clean:
-	rm -f *.o sharded train simple recall simple_hybrid
+	rm -f *.o sharded
 
 .PHONY: clean

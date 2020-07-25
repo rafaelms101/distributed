@@ -163,7 +163,12 @@ static void logSearchStart(int shard) {
 }
 
 int main(int argc, char* argv[]) {
-	MPI_Init(&argc, &argv);
+	int ok = MPI_Init(&argc, &argv);
+
+	if (ok != MPI_SUCCESS) {
+		std::printf("Failed to initialize MPI\n");
+		return -1;
+	}
 
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -171,6 +176,12 @@ int main(int argc, char* argv[]) {
     // Get the number of processes
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+    if (world_size < 3) {
+    	std::printf("Invalid number of MPI tasks. Must be at least 3\n");
+    	MPI_Finalize();
+    	return -1;
+    }
 
     MPI_Group world_group;
     MPI_Comm_group(MPI_COMM_WORLD, &world_group);
@@ -181,6 +192,12 @@ int main(int argc, char* argv[]) {
     
     MPI_Comm_create_group(MPI_COMM_WORLD, search_group, 112758, &cfg.search_comm);
     
+    if (argc <= 1) {
+    	std::printf("Missing dataset file\n");
+    	MPI_Finalize();
+    	return -1;
+    }
+
     cfg.loadConfig(argv[1]);
     
     

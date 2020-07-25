@@ -15,7 +15,13 @@ Config cfg;
 
 void Config::loadConfig(std::string filename) {	
 	pt::ptree tree;
-	pt::read_json(filename, tree);
+	try {
+		pt::read_json(filename, tree);
+	} catch (...) {
+		std::printf("Unable to read database config file\n");
+		std::exit(-1);
+	}
+
 	cfg.d = tree.get<long>("dimensions");
 	cfg.index_path = tree.get<std::string>("index_path");
 	cfg.queries_path = tree.get<std::string>("queries_path");
