@@ -14,6 +14,8 @@ MPI = mpic++
 FAISS_INCLUDE = -I $(FAISS_HOME)/.. -I $(FAISS_HOME)
 FAISS_LIB = $(FAISS_HOME)/libfaiss.a
 
+all: sharded
+
 %.o: %.cpp *.h
 	$(MPI) -g -std=c++11  $(OPT) $(CPPFLAGS) -o $@ -c $< $(FAISS_INCLUDE) 
 
