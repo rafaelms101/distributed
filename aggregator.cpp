@@ -4,6 +4,7 @@
 #include <mpi.h>
 #include <list>
 #include <queue>
+#include <map>
 
 #include "faiss/IndexIVFPQ.h"
 

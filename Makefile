@@ -20,7 +20,7 @@ all: sharded
 	$(MPI) -g -std=c++11  $(OPT) $(CPPFLAGS) -o $@ -c $< $(FAISS_INCLUDE) 
 
 sharded: config.o utils.o readSplittedIndex.o generator.o search.o aggregator.o ExecPolicy.o Buffer.o SyncBuffer.o SearchStrategy.o sharded.o $(FAISS_LIB)
-	$(MPI) -g -std=c++11 $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS) -lboost_filesystem -Wall
+	$(MPI) -g -std=c++11 $(OPT) $(LDFLAGS) $(CPPFLAGS) -o $@ $^ $(LIBS) -lboost_filesystem -lboost_system -Wall
 
 clean:
 	rm -f *.o sharded
