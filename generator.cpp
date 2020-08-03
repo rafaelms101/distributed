@@ -132,9 +132,9 @@ static void compute_stats(double* start_time, double* end_time, Config& cfg) {
 		total += response_time;
 	}
 	
-	std::printf("%lf\n", total / (cfg.num_blocks * cfg.block_size));
-	std::printf("%lf\n", end - start);
-	
+//	std::printf("%lf\n", total / (cfg.num_blocks * cfg.block_size));
+//	std::printf("%lf\n", end - start);
+//
 	std::fflush(stdout);
 }
 

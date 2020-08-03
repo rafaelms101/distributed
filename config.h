@@ -15,6 +15,16 @@ enum class SearchAlgorithm {Cpu, Gpu, Hybrid, CpuFixed, Fixed, Best};
 class ExecPolicy;
 class SearchStrategy;
 
+
+struct SingleExec {
+	double duration;
+	long numQueries;
+};
+
+struct SingleTransfer {
+	double duration;
+};
+
 struct Config {
 	void loadConfig(std::string filename);
 	
@@ -50,6 +60,9 @@ struct Config {
 	long gpu_pieces;
 	long total_pieces;
 	
+	std::vector<SingleExec> execs;
+	std::vector<SingleTransfer> transfers;
+
 	ExecType exec_type;
 	
 	ExecPolicy* exec_policy = nullptr;

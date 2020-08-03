@@ -302,7 +302,13 @@ void GpuOnlySearchStrategy::start_search_process() {
 			allFinished = false;
 			
 			if (on_gpu != i) {
+
+				auto before = now();
 				gpu_index->copyFrom(cpu_index[i]);
+				SingleTransfer transfer;
+				transfer.duration = now() - before;
+				cfg.transfers.push_back(transfer);
+
 				on_gpu = i;
 			}
 			
@@ -311,8 +317,15 @@ void GpuOnlySearchStrategy::start_search_process() {
 
 			while (num_blocks_to_be_processed >= 1) {
 				long nb = std::min(num_blocks_to_be_processed, best_block_point_gpu);
+
+
+				SingleExec exec;
+				exec.numQueries = nb * cfg.block_size;
+				auto before = now();
 				gpu_index->search(nb * cfg.block_size, (float*) query_buffer[i]->front(), cfg.k, D, I);
-				
+				exec.duration = now() - before;
+				cfg.execs.push_back(exec);
+
 				query_buffer[i]->remove(nb);
 				all_distance_buffers[i]->insert(nb, (byte*) D);
 				all_label_buffers[i]->insert(nb, (byte*) I);
@@ -323,6 +336,18 @@ void GpuOnlySearchStrategy::start_search_process() {
 		}
 	}
 	
+	std::printf("Execs: \n");
+
+
+	for (int i = 0; i < cfg.execs.size(); i++) {
+		std::printf("%ld %lf\n", cfg.execs[i].numQueries, cfg.execs[i].duration);
+	}
+
+	std::printf("Transfers: \n");
+	for (int i = 0; i < cfg.transfers.size(); i++) {
+		std::printf("%lf\n", cfg.transfers[i].duration);
+	}
+
 	merger_process.join();
 }
 
@@ -405,6 +430,7 @@ void BestSearchStrategy::gpu_process() {
 				//exchange it
 				deb("Switching %d[size=%d] with %d[size=%d]", on_gpu, query_buffer[on_gpu]->num_entries() * cfg.block_size, largest_index, largest_size * cfg.block_size);
 				on_gpu = largest_index;
+				auto before = now();
 				gpu_index->copyFrom(cpu_index[largest_index]);
 				deb("Switch finished");
 			}
